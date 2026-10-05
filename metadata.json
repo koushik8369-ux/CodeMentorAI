@@ -1,0 +1,8 @@
+{
+  "name": "CodeMentor AI",
+  "description": "AI-powered coding interview preparation platform for software engineering candidates.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
