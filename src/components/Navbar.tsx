@@ -1,18 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Terminal, Code2, Sparkles, Activity, Menu, X, ArrowRight } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Terminal, Menu, X, ArrowRight, LogOut, User as UserIcon } from 'lucide-react';
 import { api, HealthStatus } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export const Navbar: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuth();
 
   useEffect(() => {
     api.getHealth()
       .then((data) => setHealth(data))
       .catch(() => setHealth({ status: 'UP', service: 'CodeMentor AI' }));
   }, []);
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -48,12 +56,6 @@ export const Navbar: React.FC = () => {
           >
             How It Works
           </a>
-          <a
-            href="/#pricing"
-            className="text-sm font-medium text-slate-300 hover:text-white transition-colors"
-          >
-            Pricing
-          </a>
           <Link
             to="/problems"
             className={`text-sm font-medium transition-colors ${
@@ -75,25 +77,45 @@ export const Navbar: React.FC = () => {
         {/* Actions & Live Status */}
         <div className="hidden md:flex items-center gap-4">
           {/* Health indicator */}
-          <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 px-2 py-1 rounded bg-slate-900 border border-slate-800">
+          <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             <span>API: {health?.status || 'CONNECTED'}</span>
           </div>
 
-          <Link
-            to="/dashboard"
-            className="text-sm font-medium text-slate-300 hover:text-white transition-colors px-3 py-1.5"
-          >
-            Login
-          </Link>
-
-          <Link
-            to="/interview-setup"
-            className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 transition-all shadow-sm shadow-indigo-500/20"
-          >
-            <span>Get Started</span>
-            <ArrowRight className="h-4 w-4" />
-          </Link>
+          {isAuthenticated && user ? (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300">
+                <UserIcon className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="font-medium text-white">{user.name}</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
+                  {user.role}
+                </span>
+              </div>
+              <button
+                onClick={handleLogout}
+                title="Sign Out"
+                className="p-2 rounded-lg text-slate-400 hover:text-rose-400 hover:bg-slate-900 transition-colors"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Link
+                to="/login"
+                className="text-sm font-medium text-slate-300 hover:text-white transition-colors px-3 py-1.5"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/register"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3.5 py-1.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 transition-all shadow-sm shadow-emerald-500/20"
+              >
+                <span>Register</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* Mobile menu trigger */}
@@ -111,27 +133,6 @@ export const Navbar: React.FC = () => {
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
         <div className="md:hidden border-b border-slate-800 bg-slate-950 px-4 pt-2 pb-6 space-y-3">
-          <a
-            href="/#features"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block text-sm font-medium text-slate-300 py-2 hover:text-white"
-          >
-            Features
-          </a>
-          <a
-            href="/#how-it-works"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block text-sm font-medium text-slate-300 py-2 hover:text-white"
-          >
-            How It Works
-          </a>
-          <a
-            href="/#pricing"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block text-sm font-medium text-slate-300 py-2 hover:text-white"
-          >
-            Pricing
-          </a>
           <Link
             to="/problems"
             onClick={() => setMobileMenuOpen(false)}
@@ -146,17 +147,42 @@ export const Navbar: React.FC = () => {
           >
             Candidate Dashboard
           </Link>
-          <div className="pt-2 flex flex-col gap-2">
-            <Link
-              to="/interview-setup"
-              onClick={() => setMobileMenuOpen(false)}
-              className="w-full text-center rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-500"
-            >
-              Get Started Free
-            </Link>
-          </div>
+          {isAuthenticated && user ? (
+            <div className="pt-2 flex flex-col gap-2">
+              <div className="text-xs text-slate-400 py-1">
+                Signed in as <span className="text-white font-medium">{user.name}</span> ({user.role})
+              </div>
+              <button
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  handleLogout();
+                }}
+                className="w-full text-center rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 px-4 py-2.5 text-sm font-medium hover:bg-rose-500/20"
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <div className="pt-2 flex flex-col gap-2">
+              <Link
+                to="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full text-center rounded-lg bg-slate-900 border border-slate-800 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-800"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/register"
+                onClick={() => setMobileMenuOpen(false)}
+                className="w-full text-center rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+              >
+                Register
+              </Link>
+            </div>
+          )}
         </div>
       )}
     </header>
   );
 };
+

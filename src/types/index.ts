@@ -87,3 +87,29 @@ export interface UserMetrics {
   currentStreakDays: number;
   skills: SkillScore[];
 }
+
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: 'USER' | 'ADMIN' | string;
+  createdAt?: string;
+}
+
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  type: string;
+  user: User;
+}
+

@@ -3,11 +3,63 @@ import {
   InterviewSession,
   QuestionGenerationRequest,
   QuestionGenerationResponse,
+  User,
+  RegisterPayload,
+  LoginPayload,
+  AuthResponse,
 } from '../types';
 
 // Spring Boot REST API Base URL
 // In development: defaults to http://localhost:8080/api
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+
+const TOKEN_KEY = 'codementor_auth_token';
+const USER_KEY = 'codementor_auth_user';
+
+export const authStorage = {
+  getToken(): string | null {
+    try {
+      return localStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  },
+  getUser(): User | null {
+    try {
+      const data = localStorage.getItem(USER_KEY);
+      return data ? JSON.parse(data) : null;
+    } catch {
+      return null;
+    }
+  },
+  setAuth(token: string, user: User): void {
+    try {
+      localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+    } catch (e) {
+      console.error('Failed to save auth to storage', e);
+    }
+  },
+  clearAuth(): void {
+    try {
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    } catch (e) {
+      console.error('Failed to clear auth from storage', e);
+    }
+  },
+};
+
+function getAuthHeaders(): HeadersInit {
+  const token = authStorage.getToken();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
+}
 
 export interface HealthStatus {
   status: string;
@@ -18,6 +70,53 @@ export interface HealthStatus {
 }
 
 export const api = {
+  async register(payload: RegisterPayload): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = data.details?.email || data.details?.password || data.details?.name || data.message || 'Registration failed';
+      throw new Error(message);
+    }
+    authStorage.setAuth(data.token, data.user);
+    return data;
+  },
+
+  async login(payload: LoginPayload): Promise<AuthResponse> {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = data.details?.email || data.details?.password || data.message || 'Invalid email or password';
+      throw new Error(message);
+    }
+    authStorage.setAuth(data.token, data.user);
+    return data;
+  },
+
+  async getCurrentUser(): Promise<User | null> {
+    const token = authStorage.getToken();
+    if (!token) return null;
+    try {
+      const res = await fetch(`${API_BASE}/auth/me`, {
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) {
+        authStorage.clearAuth();
+        return null;
+      }
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+
   async getHealth(): Promise<HealthStatus> {
     try {
       const res = await fetch(`${API_BASE}/health`);
@@ -50,7 +149,7 @@ export const api = {
   async createInterview(payload: Partial<InterviewSession>): Promise<InterviewSession> {
     const res = await fetch(`${API_BASE}/interviews`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -63,7 +162,7 @@ export const api = {
   async generateQuestion(req: QuestionGenerationRequest): Promise<QuestionGenerationResponse> {
     const res = await fetch(`${API_BASE}/ai/generate-question`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(req),
     });
     if (!res.ok) {
@@ -73,3 +172,4 @@ export const api = {
     return await res.json();
   },
 };
+
