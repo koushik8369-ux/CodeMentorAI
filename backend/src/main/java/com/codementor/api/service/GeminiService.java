@@ -26,7 +26,8 @@ public class GeminiService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(10))
+            .version(HttpClient.Version.HTTP_1_1)
+            .connectTimeout(Duration.ofSeconds(15))
             .build();
 
     public QuestionGenerationResponse generateQuestion(QuestionGenerationRequest request) {
