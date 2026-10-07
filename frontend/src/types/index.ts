@@ -113,3 +113,48 @@ export interface AuthResponse {
   user: User;
 }
 
+export interface ProblemExample {
+  input: string;
+  output: string;
+  explanation?: string;
+}
+
+export interface StartInterviewPayload {
+  topic: string;
+  difficulty: string;
+  language: string;
+}
+
+export interface SubmitInterviewPayload {
+  code: string;
+}
+
+export interface Interview {
+  id: number;
+  userId?: number;
+  role?: string;
+  topic: string;
+  difficulty: string;
+  language: string;
+  problemTitle: string;
+  problemDescription: string;
+  inputFormat?: string;
+  outputFormat?: string;
+  constraints?: string[];
+  examples?: ProblemExample[];
+  starterCode?: string;
+  userCode?: string;
+  score?: number;
+  status: 'IN_PROGRESS' | 'COMPLETED' | string;
+  correctness?: string;
+  codeQuality?: string;
+  timeComplexity?: string;
+  spaceComplexity?: string;
+  strengths?: string[];
+  weaknesses?: string[];
+  recommendations?: string[];
+  aiFeedback?: string;
+  startedAt?: string;
+  completedAt?: string;
+  createdAt?: string;
+}

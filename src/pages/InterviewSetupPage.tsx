@@ -1,365 +1,169 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  Sparkles,
-  Terminal,
-  Code2,
-  CheckCircle2,
-  Cpu,
-  Clock,
-  ArrowRight,
-  Layers,
-  Sliders,
-  Check,
-  Loader2,
-  FileCode,
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '../layouts/DashboardLayout';
 import { api } from '../services/api';
-import { QuestionGenerationResponse } from '../types';
+import { Interview } from '../types';
+import { InterviewSetup } from '../components/interview/InterviewSetup';
+import { CodingWorkspace } from '../components/interview/CodingWorkspace';
+import { InterviewResult } from '../components/interview/InterviewResult';
+import { InterviewHistory } from '../components/interview/InterviewHistory';
+import { Sparkles, History, Play } from 'lucide-react';
 
 export const InterviewSetupPage: React.FC = () => {
-  const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState<'setup' | 'workspace' | 'result' | 'history'>('setup');
+  const [currentInterview, setCurrentInterview] = useState<Interview | null>(null);
+  const [historyList, setHistoryList] = useState<Interview[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Form State
-  const [role, setRole] = useState('Software Engineer');
-  const [language, setLanguage] = useState<'Java' | 'Python' | 'TypeScript' | 'Go' | 'C++'>('Java');
-  const [difficulty, setDifficulty] = useState<'Easy' | 'Medium' | 'Hard'>('Medium');
-  const [interviewType, setInterviewType] = useState('Coding Interview');
-  const [selectedTopics, setSelectedTopics] = useState<string[]>(['Arrays', 'HashMap']);
-  const [questionCount, setQuestionCount] = useState<number>(5);
+  // Load history when entering history tab
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadHistory();
+    }
+  }, [activeTab]);
 
-  // Execution / Preparation State
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [generatedQuestion, setGeneratedQuestion] = useState<QuestionGenerationResponse | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-
-  const availableRoles = [
-    'Software Engineer',
-    'Backend Engineer',
-    'Frontend Engineer',
-    'Full Stack Engineer',
-    'Machine Learning Engineer',
-  ];
-
-  const availableLanguages: ('Java' | 'Python' | 'TypeScript' | 'Go' | 'C++')[] = [
-    'Java',
-    'Python',
-    'TypeScript',
-    'Go',
-    'C++',
-  ];
-
-  const availableTypes = [
-    'Coding Interview',
-    'Data Structures & Algorithms',
-    'Framework Deep Dive (Spring / React)',
-    'System Design & Concurrency',
-  ];
-
-  const allTopics = [
-    'Arrays',
-    'Strings',
-    'HashMap',
-    'Trees',
-    'Dynamic Programming',
-    'Binary Search',
-    'Spring Boot',
-    'SQL & Transactions',
-    'Graphs',
-    'Concurrency',
-  ];
-
-  const toggleTopic = (topic: string) => {
-    if (selectedTopics.includes(topic)) {
-      if (selectedTopics.length > 1) {
-        setSelectedTopics(selectedTopics.filter((t) => t !== topic));
-      }
-    } else {
-      setSelectedTopics([...selectedTopics, topic]);
+  const loadHistory = async () => {
+    setIsHistoryLoading(true);
+    setErrorMessage(null);
+    try {
+      const data = await api.getInterviewHistory();
+      setHistoryList(data);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to load past interviews');
+    } finally {
+      setIsHistoryLoading(false);
     }
   };
 
-  const handleStartInterview = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setErrorMsg(null);
-
+  const handleStartInterview = async (topic: string, difficulty: string, language: string) => {
+    setIsLoading(true);
+    setErrorMessage(null);
     try {
-      // 1. Post to Interview Session API
-      await api.createInterview({
-        role: role as any,
-        language,
-        difficulty,
-        type: interviewType as any,
-        topics: selectedTopics,
-        questionCount,
-      });
-
-      // 2. Generate initial AI Question for this candidate
-      const question = await api.generateQuestion({
-        role,
-        language,
-        difficulty,
-        topic: selectedTopics[0] || 'Arrays',
-      });
-
-      setGeneratedQuestion(question);
+      const interview = await api.startInterview({ topic, difficulty, language });
+      setCurrentInterview(interview);
+      setActiveTab('workspace');
     } catch (err: any) {
-      console.error('Error starting interview', err);
-      setErrorMsg('Failed to initialize interview session. Please try again.');
+      setErrorMessage(err.message || 'Failed to start interview. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSubmitSolution = async (code: string) => {
+    if (!currentInterview) return;
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const evaluated = await api.submitInterview(currentInterview.id, { code });
+      setCurrentInterview(evaluated);
+      setActiveTab('result');
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to submit and evaluate code.');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  const handleSelectHistoryItem = (item: Interview) => {
+    setCurrentInterview(item);
+    if (item.status === 'COMPLETED') {
+      setActiveTab('result');
+    } else {
+      setActiveTab('workspace');
+    }
+  };
+
   return (
     <DashboardLayout>
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="border-b border-slate-850 pb-6">
-          <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 mb-1">
-            <Sliders className="h-4 w-4" />
-            <span>SESSION CALIBRATION</span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-            Start New Interview
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Configure your technical scope. The AI interviewer will calibrate coding challenges and evaluation rubrics accordingly.
-          </p>
-        </div>
-
-        {/* Preparation / Success Screen when Question is Generated */}
-        {generatedQuestion ? (
-          <div className="rounded-xl border border-indigo-500/50 bg-slate-900/90 p-6 sm:p-8 space-y-6 shadow-xl shadow-indigo-500/10">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
-                  <CheckCircle2 className="h-6 w-6" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-bold text-white">Interview Session Initialized!</h2>
-                  <p className="text-xs text-slate-400 font-mono">
-                    Target Role: {role} · {language} · {difficulty}
-                  </p>
-                </div>
-              </div>
-
-              <span className="text-xs font-mono text-emerald-400">
-                Question 1 of {questionCount}
-              </span>
-            </div>
-
-            {/* Generated Question Preview */}
-            <div className="rounded-lg bg-slate-950 p-5 border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-indigo-400 font-semibold">{generatedQuestion.title}</span>
-                <span className="text-slate-400">{generatedQuestion.topic}</span>
-              </div>
-              <p className="text-xs text-slate-300 leading-relaxed">
-                {generatedQuestion.description}
-              </p>
-
-              {generatedQuestion.examples && generatedQuestion.examples.length > 0 && (
-                <div className="mt-3 p-3 rounded bg-slate-900 font-mono text-xs text-slate-300">
-                  <span className="text-[11px] text-slate-400 block mb-1">Example:</span>
-                  <div>Input: {generatedQuestion.examples[0].input}</div>
-                  <div className="text-emerald-400">Output: {generatedQuestion.examples[0].output}</div>
-                </div>
-              )}
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+      <div className="space-y-6">
+        {/* Navigation Tabs (only shown when not inside active workspace) */}
+        {activeTab !== 'workspace' && (
+          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setGeneratedQuestion(null)}
-                className="text-xs font-mono text-slate-400 hover:text-white"
+                onClick={() => {
+                  setActiveTab('setup');
+                  setErrorMessage(null);
+                }}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2 ${
+                  activeTab === 'setup'
+                    ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
               >
-                ← Reconfigure Parameters
+                <Play className="w-4 h-4" />
+                <span>Configure Interview</span>
               </button>
 
               <button
-                onClick={() => navigate('/problem/two-sum')}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-xs font-semibold text-white hover:bg-indigo-500 shadow-md shadow-indigo-500/20"
+                onClick={() => {
+                  setActiveTab('history');
+                  setErrorMessage(null);
+                }}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition flex items-center gap-2 ${
+                  activeTab === 'history'
+                    ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+                }`}
               >
-                <span>Enter Coding Workspace</span>
-                <ArrowRight className="h-4 w-4" />
+                <History className="w-4 h-4" />
+                <span>Interview History</span>
               </button>
             </div>
           </div>
-        ) : (
-          /* Calibration Form */
-          <form onSubmit={handleStartInterview} className="space-y-6">
-            {errorMsg && (
-              <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
-                {errorMsg}
-              </div>
-            )}
+        )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Target Role */}
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-200 uppercase tracking-wider font-mono">
-                  Target Role
-                </label>
-                <div className="relative">
-                  <select
-                    value={role}
-                    onChange={(e) => setRole(e.target.value)}
-                    className="w-full appearance-none rounded-lg border border-slate-800 bg-slate-900/90 px-4 py-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  >
-                    {availableRoles.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+        {/* Setup Screen */}
+        {activeTab === 'setup' && (
+          <InterviewSetup
+            onStart={handleStartInterview}
+            isLoading={isLoading}
+            error={errorMessage}
+          />
+        )}
 
-              {/* Primary Language */}
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-200 uppercase tracking-wider font-mono">
-                  Primary Language
-                </label>
-                <div className="relative">
-                  <select
-                    value={language}
-                    onChange={(e) => setLanguage(e.target.value as any)}
-                    className="w-full appearance-none rounded-lg border border-slate-800 bg-slate-900/90 px-4 py-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                  >
-                    {availableLanguages.map((lang) => (
-                      <option key={lang} value={lang}>
-                        {lang} (Official compiler)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
+        {/* Coding Workspace Screen */}
+        {activeTab === 'workspace' && currentInterview && (
+          <CodingWorkspace
+            interview={currentInterview}
+            onSubmit={handleSubmitSolution}
+            onExit={() => {
+              if (window.confirm('Leave active interview workspace? You can resume it anytime from history.')) {
+                setActiveTab('setup');
+              }
+            }}
+            isSubmitting={isSubmitting}
+            error={errorMessage}
+          />
+        )}
 
-              {/* Difficulty */}
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-200 uppercase tracking-wider font-mono">
-                  Difficulty Level
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['Easy', 'Medium', 'Hard'] as const).map((diff) => (
-                    <button
-                      type="button"
-                      key={diff}
-                      onClick={() => setDifficulty(diff)}
-                      className={`py-2 px-3 rounded-lg text-xs font-mono font-medium transition-all ${
-                        difficulty === diff
-                          ? 'bg-indigo-600/20 border border-indigo-500 text-indigo-300 font-semibold'
-                          : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {diff}
-                    </button>
-                  ))}
-                </div>
-              </div>
+        {/* Result Screen */}
+        {activeTab === 'result' && currentInterview && (
+          <InterviewResult
+            interview={currentInterview}
+            onNewInterview={() => {
+              setCurrentInterview(null);
+              setActiveTab('setup');
+            }}
+            onViewHistory={() => {
+              setActiveTab('history');
+            }}
+          />
+        )}
 
-              {/* Interview Type */}
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-200 uppercase tracking-wider font-mono">
-                  Interview Type
-                </label>
-                <select
-                  value={interviewType}
-                  onChange={(e) => setInterviewType(e.target.value)}
-                  className="w-full appearance-none rounded-lg border border-slate-800 bg-slate-900/90 px-4 py-2.5 text-xs text-slate-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  {availableTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {/* Topics Multi-Select */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-slate-200 uppercase tracking-wider font-mono">
-                  Focus Topics
-                </label>
-                <span className="text-[11px] text-slate-400 font-mono">
-                  Selected: {selectedTopics.length}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {allTopics.map((topic) => {
-                  const active = selectedTopics.includes(topic);
-                  return (
-                    <button
-                      type="button"
-                      key={topic}
-                      onClick={() => toggleTopic(topic)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-1.5 ${
-                        active
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-slate-900/80 border border-slate-800 text-slate-400 hover:text-white hover:border-slate-700'
-                      }`}
-                    >
-                      {active && <Check className="h-3 w-3" />}
-                      <span>{topic}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Number of Questions */}
-            <div className="space-y-2">
-              <label className="block text-xs font-semibold text-slate-200 uppercase tracking-wider font-mono">
-                Number of Questions
-              </label>
-              <div className="flex items-center gap-3">
-                {[3, 5, 10].map((num) => (
-                  <button
-                    type="button"
-                    key={num}
-                    onClick={() => setQuestionCount(num)}
-                    className={`px-4 py-2 rounded-lg text-xs font-mono transition-all ${
-                      questionCount === num
-                        ? 'bg-slate-800 border border-slate-700 text-white font-bold'
-                        : 'bg-slate-900/60 border border-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    {num} Questions
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Submit Button */}
-            <div className="pt-4 border-t border-slate-850 flex items-center justify-between">
-              <div className="text-xs font-mono text-slate-400">
-                Estimated duration: ~{questionCount * 15} minutes
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSubmitting}
-                className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-3 text-xs font-semibold text-white hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500 transition-all shadow-md shadow-indigo-500/20 disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>Calibrating AI Interview...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    <span>Start Interview</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
+        {/* History Screen */}
+        {activeTab === 'history' && (
+          <InterviewHistory
+            interviews={historyList}
+            isLoading={isHistoryLoading}
+            onSelectInterview={handleSelectHistoryItem}
+            onNewInterview={() => {
+              setCurrentInterview(null);
+              setActiveTab('setup');
+            }}
+          />
         )}
       </div>
     </DashboardLayout>

@@ -7,6 +7,9 @@ import {
   RegisterPayload,
   LoginPayload,
   AuthResponse,
+  StartInterviewPayload,
+  SubmitInterviewPayload,
+  Interview,
 } from '../types';
 
 // Spring Boot REST API Base URL
@@ -140,8 +143,57 @@ export const api = {
     return await res.json();
   },
 
+  // V1.3 AI Coding Interview Engine API Methods
+  async startInterview(payload: StartInterviewPayload): Promise<Interview> {
+    const res = await fetch(`${API_BASE}/interviews/start`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Failed to start AI coding interview');
+    }
+    return data;
+  },
+
+  async submitInterview(id: number, payload: SubmitInterviewPayload): Promise<Interview> {
+    const res = await fetch(`${API_BASE}/interviews/${id}/submit`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Failed to evaluate interview solution');
+    }
+    return data;
+  },
+
+  async getInterviewHistory(): Promise<Interview[]> {
+    const res = await fetch(`${API_BASE}/interviews/history`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load interview history');
+    }
+    return await res.json();
+  },
+
+  async getInterviewById(id: number): Promise<Interview> {
+    const res = await fetch(`${API_BASE}/interviews/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load interview details');
+    }
+    return await res.json();
+  },
+
   async getInterviews(): Promise<InterviewSession[]> {
-    const res = await fetch(`${API_BASE}/interviews`);
+    const res = await fetch(`${API_BASE}/interviews`, {
+      headers: getAuthHeaders(),
+    });
     if (!res.ok) throw new Error('Failed to fetch interviews from Spring Boot');
     return await res.json();
   },
@@ -172,4 +224,3 @@ export const api = {
     return await res.json();
   },
 };
-
