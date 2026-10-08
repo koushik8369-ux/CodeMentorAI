@@ -1,6 +1,10 @@
 package com.codementor.api.service;
 
 import com.codementor.api.dto.*;
+import com.codementor.api.entity.Difficulty;
+import com.codementor.api.entity.MockInterview;
+import com.codementor.api.entity.MockInterviewQuestion;
+import com.codementor.api.entity.MockInterviewType;
 import com.codementor.api.exception.GeminiServiceException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -150,6 +154,280 @@ public class GeminiService {
             }
         }
         return getFallbackAiInsights(performanceSummary);
+    }
+
+    // ==========================================
+    // V1.5 AI Mock Technical Interview Methods
+    // ==========================================
+
+    public GeneratedMockQuestionDto generateMockInterviewQuestion(MockInterviewType type, String topic,
+                                                                 Difficulty difficulty, int roundNumber,
+                                                                 int totalRounds, List<String> previousQuestions) {
+        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+            try {
+                String prevQStr = (previousQuestions != null && !previousQuestions.isEmpty())
+                        ? String.join("\n- ", previousQuestions)
+                        : "None (this is the first round)";
+
+                String roundContext = (type == MockInterviewType.MIXED)
+                        ? (roundNumber % 2 == 1 ? "Focus on technical architecture, code concepts, or algorithms." : "Focus on behavioral scenario, leadership, or past project trade-offs.")
+                        : (type == MockInterviewType.BEHAVIORAL ? "Focus on behavioral STAR method scenarios." : "Focus on deep technical concepts, real-world systems, and engineering design trade-offs.");
+
+                String prompt = "You are an experienced Engineering Manager and Principal Technical Interviewer conducting a "
+                        + type + " mock interview.\n"
+                        + "Topic/Domain: " + topic + "\n"
+                        + "Difficulty: " + difficulty + "\n"
+                        + "Round: " + roundNumber + " of " + totalRounds + "\n"
+                        + "Round Guidelines: " + roundContext + "\n"
+                        + "Previous Questions Asked in this Session:\n- " + prevQStr + "\n\n"
+                        + "Generate ONE thought-provoking, realistic interview question for this round.\n"
+                        + "DO NOT repeat previous questions. Test deep understanding, architectural reasoning, and practical trade-offs rather than rote trivial definitions.\n"
+                        + "Respond ONLY with valid pure JSON matching this exact schema:\n"
+                        + "{\n"
+                        + "  \"question\": \"The clear, professional interview question to ask the candidate\",\n"
+                        + "  \"expectedConcepts\": [\"concept1\", \"concept2\", \"concept3\"],\n"
+                        + "  \"difficulty\": \"" + difficulty.name() + "\"\n"
+                        + "}";
+
+                String rawJson = executeGeminiPrompt(prompt);
+                GeneratedMockQuestionDto parsed = objectMapper.readValue(cleanJson(rawJson), GeneratedMockQuestionDto.class);
+                if (parsed != null && parsed.getQuestion() != null && !parsed.getQuestion().isBlank()) {
+                    return parsed;
+                }
+            } catch (Exception ignored) {
+                // Fallback heuristic question
+            }
+        }
+        return getFallbackMockQuestion(type, topic, difficulty, roundNumber);
+    }
+
+    public EvaluationResultDto evaluateMockInterviewAnswer(String question, String answer,
+                                                           MockInterviewType type, String topic,
+                                                           Difficulty difficulty, boolean isFollowUp) {
+        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+            try {
+                String prompt = "You are a Principal Technical Interviewer evaluating a candidate's response in a "
+                        + type + " mock interview on " + topic + " (" + difficulty + " difficulty).\n\n"
+                        + "Interviewer Question Asked:\n\"" + question + "\"\n\n"
+                        + "Candidate Answer Submitted:\n\"" + answer + "\"\n\n"
+                        + "Is this a follow-up answer: " + isFollowUp + "\n\n"
+                        + "Evaluate objectively on technical depth, accuracy, clarity of communication, and trade-off awareness.\n"
+                        + "If the candidate's answer has significant omissions, gaps, or ambiguity, set needsFollowUp to true and provide a specific, targeted followUpQuestion.\n"
+                        + "If the answer is comprehensive and solid, set needsFollowUp to false and followUpQuestion to null.\n"
+                        + "Respond ONLY with valid pure JSON matching this schema:\n"
+                        + "{\n"
+                        + "  \"score\": 85,\n"
+                        + "  \"correctness\": \"Evaluation of correctness and conceptual accuracy\",\n"
+                        + "  \"technicalDepth\": \"Evaluation of depth, system considerations, and edge cases\",\n"
+                        + "  \"communication\": \"Evaluation of clarity, structure, and professional articulation\",\n"
+                        + "  \"strengths\": [\"Strength 1\", \"Strength 2\"],\n"
+                        + "  \"weaknesses\": [\"Weakness or gap 1\"],\n"
+                        + "  \"feedback\": \"Constructive mentor feedback and guidance on how to strengthen the answer\",\n"
+                        + "  \"needsFollowUp\": true,\n"
+                        + "  \"followUpQuestion\": \"Specific targeted follow-up question based directly on candidate's answer\"\n"
+                        + "}\n"
+                        + "Score must be an integer between 0 and 100.";
+
+                String rawJson = executeGeminiPrompt(prompt);
+                EvaluationResultDto parsed = objectMapper.readValue(cleanJson(rawJson), EvaluationResultDto.class);
+                if (parsed != null && parsed.getScore() != null) {
+                    parsed.setScore(Math.max(0, Math.min(100, parsed.getScore())));
+                    return parsed;
+                }
+            } catch (Exception ignored) {
+                // Fallback heuristic evaluation
+            }
+        }
+        return getFallbackMockEvaluation(question, answer, topic, isFollowUp);
+    }
+
+    public FinalAssessmentResultDto generateFinalMockInterviewAssessment(MockInterview mockInterview,
+                                                                         List<MockInterviewQuestion> questions) {
+        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+            try {
+                List<Map<String, Object>> roundsSummary = new ArrayList<>();
+                for (MockInterviewQuestion q : questions) {
+                    roundsSummary.add(Map.of(
+                            "round", q.getRoundNumber(),
+                            "question", q.getQuestion(),
+                            "userAnswer", q.getUserAnswer() != null ? q.getUserAnswer() : "",
+                            "score", q.getScore() != null ? q.getScore() : 0,
+                            "feedback", q.getFeedback() != null ? q.getFeedback() : ""
+                    ));
+                }
+
+                String summaryJson = objectMapper.writeValueAsString(roundsSummary);
+                String prompt = "You are a Senior Engineering Hiring Committee Chair reviewing a complete "
+                        + mockInterview.getInterviewType() + " mock interview for a candidate.\n"
+                        + "Topic: " + mockInterview.getTopic() + "\n"
+                        + "Difficulty: " + mockInterview.getDifficulty() + "\n"
+                        + "Interview Transcript & Round Scores:\n" + summaryJson + "\n\n"
+                        + "Provide a comprehensive final hiring committee verdict and readiness evaluation.\n"
+                        + "Readiness Level must be exactly one of: NEEDS IMPROVEMENT, DEVELOPING, INTERVIEW READY, STRONG CANDIDATE.\n"
+                        + "Respond ONLY with valid pure JSON matching this exact schema:\n"
+                        + "{\n"
+                        + "  \"overallScore\": 82,\n"
+                        + "  \"technicalKnowledge\": 85,\n"
+                        + "  \"problemSolving\": 80,\n"
+                        + "  \"communication\": 84,\n"
+                        + "  \"confidence\": 80,\n"
+                        + "  \"strengths\": [\"Demonstrates strong command of core principles\", \"Clear communication\"],\n"
+                        + "  \"weaknesses\": [\"Could dig deeper into concurrency invariants\"],\n"
+                        + "  \"recommendations\": [\"Practice distributed consensus systems\", \"Review garbage collection nuances\"],\n"
+                        + "  \"overallFeedback\": \"Comprehensive narrative summary and career readiness verdict\",\n"
+                        + "  \"readinessLevel\": \"INTERVIEW READY\"\n"
+                        + "}\n"
+                        + "Scores must be integers between 0 and 100.";
+
+                String rawJson = executeGeminiPrompt(prompt);
+                FinalAssessmentResultDto parsed = objectMapper.readValue(cleanJson(rawJson), FinalAssessmentResultDto.class);
+                if (parsed != null && parsed.getOverallScore() != null) {
+                    clampAssessmentScores(parsed);
+                    return parsed;
+                }
+            } catch (Exception ignored) {
+                // Fallback heuristic final assessment
+            }
+        }
+        return getFallbackFinalAssessment(mockInterview, questions);
+    }
+
+    private void clampAssessmentScores(FinalAssessmentResultDto a) {
+        if (a.getOverallScore() != null) a.setOverallScore(Math.max(0, Math.min(100, a.getOverallScore())));
+        if (a.getTechnicalKnowledge() != null) a.setTechnicalKnowledge(Math.max(0, Math.min(100, a.getTechnicalKnowledge())));
+        if (a.getProblemSolving() != null) a.setProblemSolving(Math.max(0, Math.min(100, a.getProblemSolving())));
+        if (a.getCommunication() != null) a.setCommunication(Math.max(0, Math.min(100, a.getCommunication())));
+        if (a.getConfidence() != null) a.setConfidence(Math.max(0, Math.min(100, a.getConfidence())));
+    }
+
+    private GeneratedMockQuestionDto getFallbackMockQuestion(MockInterviewType type, String topic,
+                                                            Difficulty difficulty, int round) {
+        String q;
+        List<String> concepts;
+
+        if (type == MockInterviewType.BEHAVIORAL) {
+            switch (round % 3) {
+                case 1:
+                    q = "Tell me about a time when you encountered a major technical roadblock or production outage. How did you diagnose the issue and communicate with your team?";
+                    concepts = List.of("Ownership", "Root cause analysis", "Team communication");
+                    break;
+                case 2:
+                    q = "Describe a situation where you had a strong disagreement with a peer or tech lead over an architecture decision. How did you resolve it?";
+                    concepts = List.of("Conflict resolution", "Data-driven negotiation", "Collaboration");
+                    break;
+                default:
+                    q = "How do you prioritize competing deadlines and manage technical debt when delivering high-impact features under tight deadlines?";
+                    concepts = List.of("Prioritization", "Pragmatism", "Technical debt trade-offs");
+                    break;
+            }
+        } else if (type == MockInterviewType.MIXED && round % 2 == 0) {
+            q = "Tell me about a challenging project where you had to quickly learn a new technology or paradigm under pressure. How did you validate your approach?";
+            concepts = List.of("Adaptability", "Learning velocity", "Risk mitigation");
+        } else {
+            // Technical
+            switch (round % 4) {
+                case 1:
+                    q = "In " + topic + ", how do you ensure high throughput and low latency when handling concurrent data access? Explain the locking mechanisms or concurrency primitives involved.";
+                    concepts = List.of("Concurrency", "Thread safety", "Resource contention");
+                    break;
+                case 2:
+                    q = "Explain how memory management and resource cleanup operate in " + topic + ". What are the common causes of memory leaks and how do you profile them in production?";
+                    concepts = List.of("Garbage collection", "Memory allocation", "Profiling & telemetry");
+                    break;
+                case 3:
+                    q = "When designing a service around " + topic + ", how do you handle fault tolerance, retries, and data consistency under partial network failures?";
+                    concepts = List.of("Idempotency", "Fault tolerance", "Consistency models");
+                    break;
+                default:
+                    q = "Compare and contrast synchronous vs asynchronous architectures within " + topic + ". What are the trade-offs regarding debugging complexity, backpressure, and resource utilization?";
+                    concepts = List.of("Async I/O", "Backpressure", "System scalability");
+                    break;
+            }
+        }
+
+        return new GeneratedMockQuestionDto(q, concepts, difficulty.name());
+    }
+
+    private EvaluationResultDto getFallbackMockEvaluation(String question, String answer, String topic, boolean isFollowUp) {
+        int length = answer != null ? answer.trim().length() : 0;
+        int score = length > 120 ? 84 : (length > 40 ? 72 : 55);
+
+        List<String> strengths = new ArrayList<>();
+        List<String> weaknesses = new ArrayList<>();
+
+        if (length > 60) {
+            strengths.add("Directly addresses the core inquiry regarding " + topic);
+            strengths.add("Structured explanation demonstrating baseline engineering familiarity");
+        } else {
+            strengths.add("Preliminary conceptual awareness stated");
+            weaknesses.add("Answer is quite concise; elaboration with concrete examples is recommended");
+        }
+
+        if (length < 150) {
+            weaknesses.add("Could benefit from discussing concrete production trade-offs and failure scenarios");
+        }
+
+        boolean needsFollowUp = length < 100 && !isFollowUp;
+        String followUp = needsFollowUp
+                ? "Could you elaborate on the practical trade-offs and describe an example scenario where this approach might fail?"
+                : null;
+
+        return new EvaluationResultDto(
+                score,
+                "Candidate understands the key concepts and provides a coherent answer.",
+                "Good technical foundation; deeper discussion of performance constraints would strengthen the response.",
+                "Clear and structured articulation.",
+                strengths,
+                weaknesses,
+                "Strong foundation shown. Focus on quantifying system trade-offs and explaining error handling mechanisms.",
+                needsFollowUp,
+                followUp
+        );
+    }
+
+    private FinalAssessmentResultDto getFallbackFinalAssessment(MockInterview mockInterview,
+                                                               List<MockInterviewQuestion> questions) {
+        double avgScore = questions.stream()
+                .filter(q -> q.getScore() != null)
+                .mapToInt(MockInterviewQuestion::getScore)
+                .average().orElse(75.0);
+
+        int score = (int) Math.round(avgScore);
+        int tech = Math.min(100, Math.max(0, score + 2));
+        int ps = Math.min(100, Math.max(0, score - 1));
+        int comm = Math.min(100, Math.max(0, score + 3));
+        int conf = Math.min(100, Math.max(0, score));
+
+        String readiness;
+        if (score >= 85) readiness = "STRONG CANDIDATE";
+        else if (score >= 70) readiness = "INTERVIEW READY";
+        else if (score >= 55) readiness = "DEVELOPING";
+        else readiness = "NEEDS IMPROVEMENT";
+
+        List<String> strengths = List.of(
+                "Consistent conceptual understanding across multiple rounds",
+                "Clear problem decomposition and logical explanation"
+        );
+        List<String> weaknesses = List.of(
+                "Occasional hesitation on boundary edge cases and concurrency locks"
+        );
+        List<String> recommendations = List.of(
+                "Practice framing answers using structured frameworks (STAR for behavioral, Architecture-Trade-Offs for technical)",
+                "Review distributed consistency and asynchronous flow patterns"
+        );
+
+        return new FinalAssessmentResultDto(
+                score,
+                tech,
+                ps,
+                comm,
+                conf,
+                strengths,
+                weaknesses,
+                recommendations,
+                "Candidate demonstrated solid technical readiness throughout the " + mockInterview.getTotalRounds() + "-round " + mockInterview.getInterviewType() + " mock loop. Demonstrates strong potential for target engineering levels.",
+                readiness
+        );
     }
 
     private String executeGeminiPrompt(String prompt) throws Exception {
