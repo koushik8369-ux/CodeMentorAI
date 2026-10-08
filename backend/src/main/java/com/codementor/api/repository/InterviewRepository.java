@@ -1,6 +1,7 @@
 package com.codementor.api.repository;
 
 import com.codementor.api.entity.Interview;
+import com.codementor.api.entity.InterviewStatus;
 import com.codementor.api.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -14,4 +15,8 @@ public interface InterviewRepository extends JpaRepository<Interview, Long> {
     List<Interview> findByUser_IdOrderByStartedAtDesc(Long userId);
     Optional<Interview> findByIdAndUser(Long id, User user);
     List<Interview> findAllByOrderByStartedAtDesc();
+
+    List<Interview> findByUserAndStatus(User user, InterviewStatus status);
+    List<Interview> findByUserAndStatusOrderByCompletedAtAsc(User user, InterviewStatus status);
+    List<Interview> findByUserAndStatusOrderByCompletedAtDesc(User user, InterviewStatus status);
 }

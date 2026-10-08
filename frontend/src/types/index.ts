@@ -158,3 +158,55 @@ export interface Interview {
   completedAt?: string;
   createdAt?: string;
 }
+
+export interface AnalyticsOverview {
+  totalInterviews: number;
+  averageScore: number;
+  highestScore: number;
+  lowestScore: number;
+  completedInterviews: number;
+  strongestTopic: string;
+  weakestTopic: string;
+  recentAverageScore: number;
+}
+
+export interface TopicAnalytics {
+  topic: string;
+  attempts: number;
+  averageScore: number;
+  bestScore: number;
+}
+
+export interface DifficultyAnalytics {
+  difficulty: string;
+  attempts: number;
+  averageScore: number;
+  bestScore: number;
+}
+
+export interface LanguageAnalytics {
+  language: string;
+  attempts: number;
+  averageScore: number;
+}
+
+export interface PerformanceTrend {
+  date: string;
+  score: number;
+}
+
+export interface AiActionPlan {
+  topic: string;
+  reason: string;
+  recommendedPractice: string;
+}
+
+export interface AiInsights {
+  overallAssessment: string;
+  strongTopics: string[];
+  weakTopics: string[];
+  recommendedTopics: string[];
+  actionPlan: AiActionPlan[];
+  nextDifficulty: string;
+  summary: string;
+}

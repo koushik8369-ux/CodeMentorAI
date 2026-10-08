@@ -10,6 +10,12 @@ import {
   StartInterviewPayload,
   SubmitInterviewPayload,
   Interview,
+  AnalyticsOverview,
+  TopicAnalytics,
+  DifficultyAnalytics,
+  LanguageAnalytics,
+  PerformanceTrend,
+  AiInsights,
 } from '../types';
 
 // Spring Boot REST API Base URL
@@ -186,6 +192,67 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error('Failed to load interview details');
+    }
+    return await res.json();
+  },
+
+  // V1.4 Analytics & AI Insights API Methods
+  async getAnalyticsOverview(): Promise<AnalyticsOverview> {
+    const res = await fetch(`${API_BASE}/analytics/overview`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load performance overview');
+    }
+    return await res.json();
+  },
+
+  async getTopicAnalytics(): Promise<TopicAnalytics[]> {
+    const res = await fetch(`${API_BASE}/analytics/topics`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load topic analytics');
+    }
+    return await res.json();
+  },
+
+  async getDifficultyAnalytics(): Promise<DifficultyAnalytics[]> {
+    const res = await fetch(`${API_BASE}/analytics/difficulty`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load difficulty analytics');
+    }
+    return await res.json();
+  },
+
+  async getLanguageAnalytics(): Promise<LanguageAnalytics[]> {
+    const res = await fetch(`${API_BASE}/analytics/languages`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load language analytics');
+    }
+    return await res.json();
+  },
+
+  async getPerformanceTrend(): Promise<PerformanceTrend[]> {
+    const res = await fetch(`${API_BASE}/analytics/trend`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load performance trend');
+    }
+    return await res.json();
+  },
+
+  async getAiInsights(): Promise<AiInsights> {
+    const res = await fetch(`${API_BASE}/analytics/ai-insights`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load AI personalized insights');
     }
     return await res.json();
   },

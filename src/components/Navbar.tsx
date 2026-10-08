@@ -72,6 +72,26 @@ export const Navbar: React.FC = () => {
           >
             Dashboard
           </Link>
+          {isAuthenticated && (
+            <>
+              <Link
+                to="/interviews"
+                className={`text-sm font-medium transition-colors ${
+                  isActive('/interviews') ? 'text-indigo-400' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Interviews
+              </Link>
+              <Link
+                to="/analytics"
+                className={`text-sm font-medium transition-colors ${
+                  isActive('/analytics') ? 'text-indigo-400' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Analytics
+              </Link>
+            </>
+          )}
         </nav>
 
         {/* Actions & Live Status */}

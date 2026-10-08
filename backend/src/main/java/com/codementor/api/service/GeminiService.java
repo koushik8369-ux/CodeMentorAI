@@ -73,7 +73,7 @@ public class GeminiService {
                     return parsed;
                 }
             } catch (Exception ignored) {
-                // Graceful fallback to guaranteed valid structured problem if Gemini fails or returns malformed response
+                // Graceful fallback to guaranteed valid structured problem
             }
         }
         return getFallbackProblem(topic, difficulty, language);
@@ -113,6 +113,43 @@ public class GeminiService {
             }
         }
         return getFallbackEvaluation(language, submittedCode);
+    }
+
+    public AiInsightsDto generatePersonalizedInsights(Map<String, Object> performanceSummary) {
+        if (geminiApiKey != null && !geminiApiKey.isBlank()) {
+            try {
+                String summaryJson = objectMapper.writeValueAsString(performanceSummary);
+                String prompt = "You are a Principal Engineering Career Coach and Tech Lead Interviewer.\n"
+                        + "Analyze this candidate's recent completed coding interview performance statistics:\n"
+                        + summaryJson + "\n\n"
+                        + "Produce a customized, actionable improvement plan and skill diagnosis.\n"
+                        + "Respond ONLY with pure valid JSON matching this schema:\n"
+                        + "{\n"
+                        + "  \"overallAssessment\": \"High-level holistic diagnosis of the candidate's technical interview readiness and trajectory\",\n"
+                        + "  \"strongTopics\": [\"topic1\", \"topic2\"],\n"
+                        + "  \"weakTopics\": [\"topic1\", \"topic2\"],\n"
+                        + "  \"recommendedTopics\": [\"topic1\", \"topic2\"],\n"
+                        + "  \"actionPlan\": [\n"
+                        + "    {\n"
+                        + "      \"topic\": \"topic name\",\n"
+                        + "      \"reason\": \"Specific reason based on candidate metrics or weak areas\",\n"
+                        + "      \"recommendedPractice\": \"Specific drills, algorithms, or practice focus\"\n"
+                        + "    }\n"
+                        + "  ],\n"
+                        + "  \"nextDifficulty\": \"EASY|MEDIUM|HARD\",\n"
+                        + "  \"summary\": \"Concise concluding encouragement and timeline recommendation\"\n"
+                        + "}";
+
+                String rawJson = executeGeminiPrompt(prompt);
+                AiInsightsDto parsed = objectMapper.readValue(cleanJson(rawJson), AiInsightsDto.class);
+                if (parsed != null && parsed.getOverallAssessment() != null && !parsed.getOverallAssessment().isBlank()) {
+                    return parsed;
+                }
+            } catch (Exception ignored) {
+                // Fallback to heuristic insights
+            }
+        }
+        return getFallbackAiInsights(performanceSummary);
     }
 
     private String executeGeminiPrompt(String prompt) throws Exception {
@@ -254,6 +291,45 @@ public class GeminiService {
             weaknesses,
             recommendations,
             "Good overall foundation. With additional focus on boundary test cases and memory allocation efficiency, this meets high-bar industry interview standards."
+        );
+    }
+
+    private AiInsightsDto getFallbackAiInsights(Map<String, Object> summary) {
+        Object strongest = summary.get("strongestTopic");
+        Object weakest = summary.get("weakestTopic");
+        Object avgObj = summary.get("averageScore");
+        double avg = (avgObj instanceof Number) ? ((Number) avgObj).doubleValue() : 75.0;
+
+        String strong = (strongest != null && !strongest.toString().equals("N/A")) ? strongest.toString() : "Arrays";
+        String weak = (weakest != null && !weakest.toString().equals("N/A")) ? weakest.toString() : "Dynamic Programming";
+
+        List<String> strongList = List.of(strong, "Basic Algorithms");
+        List<String> weakList = List.of(weak, "Edge Case Optimization");
+        List<String> recommendedList = List.of(weak, "Binary Trees");
+
+        List<AiActionPlanDto> plan = List.of(
+                new AiActionPlanDto(
+                        weak,
+                        "Identified lower average score and recurring boundary hurdles in " + weak + " questions.",
+                        "Practice 5 classic recursive and memoization patterns with strict time constraints."
+                ),
+                new AiActionPlanDto(
+                        "Code Quality & Invariants",
+                        "Consistent clean modular code improves clarity and decreases debugging time during interviews.",
+                        "Pre-write assertions, comment invariants, and verify asymptotic space complexity before submitting."
+                )
+        );
+
+        String nextDiff = avg >= 80 ? "HARD" : (avg >= 60 ? "MEDIUM" : "EASY");
+
+        return new AiInsightsDto(
+                "Candidate demonstrates steady technical problem-solving capabilities with strong foundations in " + strong + ". Targeting systematic practice in " + weak + " will elevate readiness for top-tier rounds.",
+                strongList,
+                weakList,
+                recommendedList,
+                plan,
+                nextDiff,
+                "Focus on dynamic programming recurrence relations and space-optimized two-pointer drills over the next 2 weeks."
         );
     }
 }
