@@ -80,7 +80,15 @@ export const Navbar: React.FC = () => {
                   isActive('/interviews') ? 'text-indigo-400' : 'text-slate-300 hover:text-white'
                 }`}
               >
-                Interviews
+                Coding
+              </Link>
+              <Link
+                to="/mock-interview"
+                className={`text-sm font-medium transition-colors ${
+                  isActive('/mock-interview') ? 'text-cyan-400' : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                Mock Interview
               </Link>
               <Link
                 to="/analytics"

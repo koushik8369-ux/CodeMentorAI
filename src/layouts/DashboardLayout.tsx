@@ -39,7 +39,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Practice', path: '/problem/two-sum', icon: Code2 },
-    { name: 'Interviews', path: '/interview-setup', icon: CalendarCheck },
+    { name: 'Coding Interviews', path: '/interview-setup', icon: CalendarCheck },
+    { name: 'AI Mock Interview', path: '/mock-interview', icon: Sparkles },
     { name: 'Problems', path: '/problems', icon: BookOpen },
     { name: 'Analytics', path: '/analytics', icon: BarChart3 },
     { name: 'Learning Plan', path: '/learning-plan', icon: GraduationCap },

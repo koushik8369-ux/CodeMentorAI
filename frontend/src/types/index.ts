@@ -210,3 +210,64 @@ export interface AiInsights {
   nextDifficulty: string;
   summary: string;
 }
+
+// V1.5 AI Mock Technical Interview Types
+export type MockInterviewType = 'TECHNICAL' | 'BEHAVIORAL' | 'MIXED';
+
+export interface StartMockInterviewPayload {
+  interviewType: MockInterviewType;
+  topic: string;
+  difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+  totalRounds: number;
+}
+
+export interface SubmitMockAnswerPayload {
+  answer: string;
+}
+
+export interface MockInterviewQuestion {
+  id: number;
+  roundNumber: number;
+  question: string;
+  userAnswer?: string;
+  score?: number;
+  correctness?: string;
+  technicalDepth?: string;
+  communication?: string;
+  feedback?: string;
+  strengths?: string;
+  weaknesses?: string;
+  followUpQuestion?: string;
+  followUpAnswer?: string;
+  followUpScore?: number;
+  followUpFeedback?: string;
+  followUpRequired?: boolean;
+  followUpCompleted?: boolean;
+  askedAt?: string;
+  answeredAt?: string;
+}
+
+export interface MockInterview {
+  id: number;
+  userId?: number;
+  interviewType: MockInterviewType;
+  topic: string;
+  difficulty: 'EASY' | 'MEDIUM' | 'HARD';
+  status: 'IN_PROGRESS' | 'COMPLETED';
+  currentRound: number;
+  totalRounds: number;
+  startedAt: string;
+  completedAt?: string;
+  overallScore?: number;
+  technicalKnowledge?: number;
+  problemSolving?: number;
+  communication?: number;
+  confidence?: number;
+  overallFeedback?: string;
+  strengths?: string;
+  weaknesses?: string;
+  recommendations?: string;
+  readinessLevel?: 'NEEDS IMPROVEMENT' | 'DEVELOPING' | 'INTERVIEW READY' | 'STRONG CANDIDATE' | string;
+  currentQuestion?: MockInterviewQuestion;
+  questions?: MockInterviewQuestion[];
+}

@@ -16,6 +16,9 @@ import {
   LanguageAnalytics,
   PerformanceTrend,
   AiInsights,
+  StartMockInterviewPayload,
+  SubmitMockAnswerPayload,
+  MockInterview,
 } from '../types';
 
 // Spring Boot REST API Base URL
@@ -253,6 +256,53 @@ export const api = {
     });
     if (!res.ok) {
       throw new Error('Failed to load AI personalized insights');
+    }
+    return await res.json();
+  },
+
+  // V1.5 AI Mock Technical Interview API Methods
+  async startMockInterview(payload: StartMockInterviewPayload): Promise<MockInterview> {
+    const res = await fetch(`${API_BASE}/mock-interviews/start`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Failed to start AI mock interview');
+    }
+    return data;
+  },
+
+  async submitMockAnswer(id: number, payload: SubmitMockAnswerPayload): Promise<MockInterview> {
+    const res = await fetch(`${API_BASE}/mock-interviews/${id}/answer`, {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.message || 'Failed to submit interview answer');
+    }
+    return data;
+  },
+
+  async getMockInterviews(): Promise<MockInterview[]> {
+    const res = await fetch(`${API_BASE}/mock-interviews`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load mock interview history');
+    }
+    return await res.json();
+  },
+
+  async getMockInterviewById(id: number): Promise<MockInterview> {
+    const res = await fetch(`${API_BASE}/mock-interviews/${id}`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      throw new Error('Failed to load mock interview details');
     }
     return await res.json();
   },
