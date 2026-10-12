@@ -96,7 +96,11 @@ public class GlobalExceptionHandler {
         error.put("timestamp", LocalDateTime.now());
         error.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
         error.put("error", "Internal Server Error");
-        error.put("message", ex.getMessage());
+        String msg = ex.getMessage();
+        if (msg == null || msg.contains("jdbc:") || msg.contains("password") || msg.contains("org.postgresql") || msg.contains("Hikari")) {
+            msg = "An unexpected server error occurred. Please try again later.";
+        }
+        error.put("message", msg);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
     }
 }
