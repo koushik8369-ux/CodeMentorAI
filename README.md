@@ -44,15 +44,45 @@ Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-Configuration variables:
+#### Required Environment Variables
+
+Configure the following variables in your environment or `.env` file (these are placeholders only; never commit real credentials):
 
 ```ini
+DB_URL=jdbc:postgresql://HOST:5432/DATABASE?sslmode=require
+DB_USERNAME=YOUR_DATABASE_USERNAME
+DB_PASSWORD=YOUR_DATABASE_PASSWORD
+JWT_SECRET=YOUR_SECURE_SECRET
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 VITE_API_BASE_URL=http://localhost:8080/api
-GEMINI_API_KEY=your_gemini_api_key
-DB_URL=jdbc:postgresql://localhost:5432/codementor_db
-DB_USERNAME=postgres
-DB_PASSWORD=your_password
 ```
+
+#### Connecting a Hosted PostgreSQL Database (Neon / Supabase / Cloud SQL)
+
+CodeMentor AI supports any standard PostgreSQL 14+ database, including hosted serverless providers:
+
+1. **Neon (Serverless Postgres)**:
+   - Create a project on [Neon](https://neon.tech).
+   - In the dashboard, copy the JDBC connection string or build it using the host, database, user, and password.
+   - Append `?sslmode=require` to enable mandatory SSL encryption:
+     ```ini
+     DB_URL=jdbc:postgresql://ep-example-123456.us-east-2.aws.neon.tech:5432/neondb?sslmode=require
+     DB_USERNAME=YOUR_NEON_USERNAME
+     DB_PASSWORD=YOUR_NEON_PASSWORD
+     ```
+
+2. **Supabase**:
+   - In your Supabase project settings under **Database** -> **Connection String** -> **JDBC**, copy the host and database details:
+     ```ini
+     DB_URL=jdbc:postgresql://db.YOUR_PROJECT_REF.supabase.co:5432/postgres?sslmode=require
+     DB_USERNAME=postgres
+     DB_PASSWORD=YOUR_SUPABASE_DB_PASSWORD
+     ```
+
+3. **Data Safety & Schema Updates**:
+   - CodeMentor AI uses `spring.jpa.hibernate.ddl-auto=update`.
+   - Existing tables and records are **never** dropped, truncated, or deleted. Hibernate adds missing columns and tables non-destructively.
+   - For local development with a local PostgreSQL server or Docker container, the default fallback is `jdbc:postgresql://localhost:5432/codementor_db`.
 
 ### 2. Running the Spring Boot Backend
 
