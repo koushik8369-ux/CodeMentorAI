@@ -1,6 +1,6 @@
 package com.codementor.api;
 
-import com.codementor.api.repository.UserRepository;
+import com.codementor.api.service.AuthService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -27,14 +27,14 @@ public class AuthControllerTests {
     private MockMvc mockMvc;
 
     @Autowired
-    private UserRepository userRepository;
+    private AuthService authService;
 
     @Autowired
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
-        userRepository.deleteAll();
+        authService.clearDemoUsers();
     }
 
     @Test
@@ -143,8 +143,19 @@ public class AuthControllerTests {
     @Test
     @DisplayName("Invalid login returns HTTP 401 Unauthorized")
     void testInvalidLoginReturns401() throws Exception {
+        Map<String, String> registerPayload = Map.of(
+                "name", "Registered User",
+                "email", "known@example.com",
+                "password", "correctPassword123"
+        );
+
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(registerPayload)))
+                .andExpect(status().isCreated());
+
         Map<String, String> loginPayload = Map.of(
-                "email", "unknown@example.com",
+                "email", "known@example.com",
                 "password", "wrongpassword123"
         );
 

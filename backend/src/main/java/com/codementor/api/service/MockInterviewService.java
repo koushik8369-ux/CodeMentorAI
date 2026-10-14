@@ -3,41 +3,37 @@ package com.codementor.api.service;
 import com.codementor.api.dto.*;
 import com.codementor.api.entity.*;
 import com.codementor.api.exception.ResourceNotFoundException;
-import com.codementor.api.repository.MockInterviewQuestionRepository;
-import com.codementor.api.repository.MockInterviewRepository;
-import com.codementor.api.repository.UserRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Service
 public class MockInterviewService {
 
-    private final MockInterviewRepository mockInterviewRepository;
-    private final MockInterviewQuestionRepository questionRepository;
-    private final UserRepository userRepository;
+    private final AuthService authService;
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ConcurrentHashMap<Long, MockInterview> mockSessions = new ConcurrentHashMap<>();
+    private final AtomicLong idGenerator = new AtomicLong(2000);
+    private final AtomicLong questionIdGenerator = new AtomicLong(5000);
 
-    public MockInterviewService(MockInterviewRepository mockInterviewRepository,
-                                MockInterviewQuestionRepository questionRepository,
-                                UserRepository userRepository,
-                                GeminiService geminiService) {
-        this.mockInterviewRepository = mockInterviewRepository;
-        this.questionRepository = questionRepository;
-        this.userRepository = userRepository;
+    public MockInterviewService(AuthService authService, GeminiService geminiService) {
+        this.authService = authService;
         this.geminiService = geminiService;
     }
 
-    @Transactional
     public MockInterviewResponseDto startMockInterview(StartMockInterviewRequest request, String userEmail) {
-        User user = getUser(userEmail);
+        String email = (userEmail != null && !userEmail.isBlank()) ? userEmail : "candidate@codementor.ai";
+        UserDto userDto = authService.getCurrentUser(email);
+        User user = new User(userDto.getName(), userDto.getEmail(), "", userDto.getRole());
+        user.setId(userDto.getId());
 
         if (request.getTotalRounds() < 3 || request.getTotalRounds() > 10) {
             throw new IllegalArgumentException("Total rounds must be between 3 and 10.");
@@ -59,7 +55,7 @@ public class MockInterviewService {
                 request.getDifficulty(),
                 request.getTotalRounds()
         );
-        MockInterview savedInterview = mockInterviewRepository.save(interview);
+        interview.setId(idGenerator.incrementAndGet());
 
         GeneratedMockQuestionDto generated;
         try {
@@ -79,21 +75,22 @@ public class MockInterviewService {
             );
         }
 
-        MockInterviewQuestion q1 = new MockInterviewQuestion(savedInterview, 1, generated.getQuestion());
-        questionRepository.save(q1);
+        MockInterviewQuestion q1 = new MockInterviewQuestion(interview, 1, generated.getQuestion());
+        q1.setId(questionIdGenerator.incrementAndGet());
+        interview.addQuestion(q1);
 
-        savedInterview.getQuestions().add(q1);
-        return MockInterviewResponseDto.fromEntity(savedInterview);
+        mockSessions.put(interview.getId(), interview);
+        return MockInterviewResponseDto.fromEntity(interview);
     }
 
-    @Transactional
     public MockInterviewResponseDto submitAnswer(Long interviewId, SubmitMockAnswerRequest request, String userEmail) {
-        User user = getUser(userEmail);
-        MockInterview interview = mockInterviewRepository.findById(interviewId)
-                .orElseThrow(() -> new ResourceNotFoundException("Mock interview not found with id: " + interviewId));
+        MockInterview interview = mockSessions.get(interviewId);
+        if (interview == null) {
+            throw new ResourceNotFoundException("Mock interview not found with id: " + interviewId);
+        }
 
-        // Ownership validation
-        if (!interview.getUser().getId().equals(user.getId())) {
+        UserDto userDto = authService.getCurrentUser(userEmail);
+        if (interview.getUser() != null && !interview.getUser().getId().equals(userDto.getId())) {
             throw new AccessDeniedException("You do not have permission to access or modify this mock interview.");
         }
 
@@ -106,14 +103,14 @@ public class MockInterviewService {
         }
 
         int currentRound = interview.getCurrentRound();
-        MockInterviewQuestion question = questionRepository
-                .findByMockInterviewAndRoundNumber(interview, currentRound)
+        MockInterviewQuestion question = interview.getQuestions().stream()
+                .filter(q -> q.getRoundNumber() == currentRound)
+                .findFirst()
                 .orElseThrow(() -> new IllegalStateException("Question for round " + currentRound + " not found."));
 
         boolean isFollowUpPhase = question.isFollowUpRequired() && !question.isFollowUpCompleted();
 
         if (isFollowUpPhase) {
-            // Answering the follow-up question
             EvaluationResultDto eval;
             try {
                 eval = geminiService.evaluateMockInterviewAnswer(
@@ -142,12 +139,9 @@ public class MockInterviewService {
             question.setFollowUpScore(eval.getScore());
             question.setFollowUpFeedback(eval.getFeedback());
             question.setFollowUpCompleted(true);
-            questionRepository.save(question);
 
-            // Progress to next round or complete interview
             advanceOrCompleteInterview(interview);
         } else {
-            // Answering primary question for this round
             if (question.getUserAnswer() != null && !question.getUserAnswer().isBlank()) {
                 throw new IllegalStateException("Round " + currentRound + " has already been answered.");
             }
@@ -191,16 +185,13 @@ public class MockInterviewService {
                 question.setFollowUpQuestion(eval.getFollowUpQuestion());
                 question.setFollowUpRequired(true);
                 question.setFollowUpCompleted(false);
-                questionRepository.save(question);
-                // Keep interview at current round so candidate answers follow-up
             } else {
-                questionRepository.save(question);
                 advanceOrCompleteInterview(interview);
             }
         }
 
-        MockInterview updated = mockInterviewRepository.save(interview);
-        return MockInterviewResponseDto.fromEntity(updated);
+        mockSessions.put(interview.getId(), interview);
+        return MockInterviewResponseDto.fromEntity(interview);
     }
 
     private void advanceOrCompleteInterview(MockInterview interview) {
@@ -208,9 +199,7 @@ public class MockInterviewService {
             int nextRound = interview.getCurrentRound() + 1;
             interview.setCurrentRound(nextRound);
 
-            // Fetch previous questions for novelty
-            List<MockInterviewQuestion> existing = questionRepository.findByMockInterviewOrderByRoundNumberAsc(interview);
-            List<String> prevQuestions = existing.stream()
+            List<String> prevQuestions = interview.getQuestions().stream()
                     .map(MockInterviewQuestion::getQuestion)
                     .collect(Collectors.toList());
 
@@ -233,11 +222,10 @@ public class MockInterviewService {
             }
 
             MockInterviewQuestion newQuestion = new MockInterviewQuestion(interview, nextRound, nextQ.getQuestion());
-            questionRepository.save(newQuestion);
-            interview.getQuestions().add(newQuestion);
+            newQuestion.setId(questionIdGenerator.incrementAndGet());
+            interview.addQuestion(newQuestion);
         } else {
-            // Completed all rounds! Calculate final assessment
-            List<MockInterviewQuestion> allQuestions = questionRepository.findByMockInterviewOrderByRoundNumberAsc(interview);
+            List<MockInterviewQuestion> allQuestions = interview.getQuestions();
 
             FinalAssessmentResultDto finalAssessment;
             try {
@@ -270,31 +258,39 @@ public class MockInterviewService {
         }
     }
 
-    @Transactional(readOnly = true)
     public List<MockInterviewResponseDto> getUserMockInterviews(String userEmail) {
-        User user = getUser(userEmail);
-        List<MockInterview> list = mockInterviewRepository.findByUserOrderByStartedAtDesc(user);
-        return list.stream()
+        String email = (userEmail != null && !userEmail.isBlank()) ? userEmail.toLowerCase() : "candidate@codementor.ai";
+        UserDto userDto = authService.getCurrentUser(email);
+        return mockSessions.values().stream()
+                .filter(i -> i.getUser() == null || i.getUser().getId().equals(userDto.getId()) || (i.getUser().getEmail() != null && i.getUser().getEmail().equalsIgnoreCase(email)))
+                .sorted((a, b) -> b.getStartedAt().compareTo(a.getStartedAt()))
                 .map(MockInterviewResponseDto::fromEntity)
                 .collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
     public MockInterviewResponseDto getMockInterviewById(Long id, String userEmail) {
-        User user = getUser(userEmail);
-        MockInterview interview = mockInterviewRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Mock interview not found with id: " + id));
+        MockInterview interview = mockSessions.get(id);
+        if (interview == null) {
+            throw new ResourceNotFoundException("Mock interview not found with id: " + id);
+        }
 
-        if (!interview.getUser().getId().equals(user.getId())) {
+        UserDto userDto = authService.getCurrentUser(userEmail);
+        if (interview.getUser() != null && !interview.getUser().getId().equals(userDto.getId())) {
             throw new AccessDeniedException("You do not have permission to view this mock interview.");
         }
 
         return MockInterviewResponseDto.fromEntity(interview);
     }
 
-    private User getUser(String userEmail) {
-        return userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
+    public void saveSession(MockInterview interview) {
+        if (interview.getId() == null) {
+            interview.setId(idGenerator.incrementAndGet());
+        }
+        mockSessions.put(interview.getId(), interview);
+    }
+
+    public void clearSessions() {
+        mockSessions.clear();
     }
 
     private String serializeList(List<String> list) {

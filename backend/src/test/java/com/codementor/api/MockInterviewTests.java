@@ -2,11 +2,10 @@ package com.codementor.api;
 
 import com.codementor.api.dto.*;
 import com.codementor.api.entity.*;
-import com.codementor.api.repository.MockInterviewQuestionRepository;
-import com.codementor.api.repository.MockInterviewRepository;
-import com.codementor.api.repository.UserRepository;
+import com.codementor.api.service.AuthService;
 import com.codementor.api.service.GeminiService;
 import com.codementor.api.service.JwtService;
+import com.codementor.api.service.MockInterviewService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -40,13 +39,10 @@ public class MockInterviewTests {
     private MockMvc mockMvc;
 
     @Autowired
-    private UserRepository userRepository;
+    private AuthService authService;
 
     @Autowired
-    private MockInterviewRepository mockInterviewRepository;
-
-    @Autowired
-    private MockInterviewQuestionRepository questionRepository;
+    private MockInterviewService mockInterviewService;
 
     @Autowired
     private JwtService jwtService;
@@ -67,15 +63,19 @@ public class MockInterviewTests {
 
     @BeforeEach
     void setUp() {
-        questionRepository.deleteAll();
-        mockInterviewRepository.deleteAll();
-        userRepository.deleteAll();
+        mockInterviewService.clearSessions();
+        authService.clearDemoUsers();
 
-        userAlice = userRepository.save(new User("Alice", "alice@test.com", passwordEncoder.encode("secret123"), "USER"));
-        userBob = userRepository.save(new User("Bob", "bob@test.com", passwordEncoder.encode("secret123"), "USER"));
+        AuthResponse respAlice = authService.register(new RegisterRequest("Alice", "alice@test.com", "secret123"));
+        userAlice = new User(respAlice.getUser().getName(), respAlice.getUser().getEmail(), "", respAlice.getUser().getRole());
+        userAlice.setId(respAlice.getUser().getId());
 
-        aliceToken = "Bearer " + jwtService.generateToken(userAlice);
-        bobToken = "Bearer " + jwtService.generateToken(userBob);
+        AuthResponse respBob = authService.register(new RegisterRequest("Bob", "bob@test.com", "secret123"));
+        userBob = new User(respBob.getUser().getName(), respBob.getUser().getEmail(), "", respBob.getUser().getRole());
+        userBob.setId(respBob.getUser().getId());
+
+        aliceToken = "Bearer " + respAlice.getToken();
+        bobToken = "Bearer " + respBob.getToken();
 
         // Default mock behaviors for Gemini
         when(geminiService.generateMockInterviewQuestion(any(), anyString(), any(), anyInt(), anyInt(), any()))
@@ -178,7 +178,7 @@ public class MockInterviewTests {
         MockInterviewResponseDto res = objectMapper.readValue(responseJson, MockInterviewResponseDto.class);
         assertNotNull(res.getCurrentQuestion());
 
-        List<MockInterviewQuestion> questionsInDb = questionRepository.findAll();
+        List<MockInterviewQuestionDto> questionsInDb = mockInterviewService.getMockInterviewById(res.getId(), "alice@test.com").getQuestions();
         assertEquals(1, questionsInDb.size());
         assertEquals(1, questionsInDb.get(0).getRoundNumber());
         assertNotNull(questionsInDb.get(0).getQuestion());
@@ -258,7 +258,7 @@ public class MockInterviewTests {
                         .content(objectMapper.writeValueAsString(answerReq)))
                 .andExpect(status().isOk());
 
-        MockInterviewQuestion q1 = questionRepository.findAll().stream()
+        MockInterviewQuestionDto q1 = mockInterviewService.getMockInterviewById(created.getId(), "alice@test.com").getQuestions().stream()
                 .filter(q -> q.getRoundNumber() == 1)
                 .findFirst().orElseThrow();
 

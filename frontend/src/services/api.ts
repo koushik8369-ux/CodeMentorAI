@@ -20,6 +20,7 @@ import {
   SubmitMockAnswerPayload,
   MockInterview,
 } from '../types';
+import { localStorageService } from './localStorageService';
 
 // Spring Boot REST API Base URL
 // In development: defaults to http://localhost:8080/api
@@ -163,6 +164,7 @@ export const api = {
     if (!res.ok) {
       throw new Error(data.message || 'Failed to start AI coding interview');
     }
+    localStorageService.saveInterview(data);
     return data;
   },
 
@@ -176,78 +178,121 @@ export const api = {
     if (!res.ok) {
       throw new Error(data.message || 'Failed to evaluate interview solution');
     }
+    localStorageService.saveInterview(data);
     return data;
   },
 
   async getInterviewHistory(): Promise<Interview[]> {
-    const res = await fetch(`${API_BASE}/interviews/history`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Failed to load interview history');
+    try {
+      const res = await fetch(`${API_BASE}/interviews/history`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const remoteList: Interview[] = await res.json();
+        if (Array.isArray(remoteList)) {
+          remoteList.forEach((item) => localStorageService.saveInterview(item));
+        }
+      }
+    } catch {
+      // Backend unavailable; rely on browser localStorage
     }
-    return await res.json();
+    return localStorageService.getInterviews();
   },
 
   async getInterviewById(id: number): Promise<Interview> {
+    const local = localStorageService.getInterviewById(id);
+    if (local) return local;
+
     const res = await fetch(`${API_BASE}/interviews/${id}`, {
       headers: getAuthHeaders(),
     });
     if (!res.ok) {
       throw new Error('Failed to load interview details');
     }
-    return await res.json();
+    const data = await res.json();
+    localStorageService.saveInterview(data);
+    return data;
   },
 
-  // V1.4 Analytics & AI Insights API Methods
+  // V1.4 Analytics & AI Insights API Methods (Zero-Database Local Calculations)
   async getAnalyticsOverview(): Promise<AnalyticsOverview> {
-    const res = await fetch(`${API_BASE}/analytics/overview`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Failed to load performance overview');
+    const localOverview = localStorageService.calculateOverview();
+    if (localOverview.completedInterviews > 0) {
+      return localOverview;
     }
-    return await res.json();
+
+    try {
+      const res = await fetch(`${API_BASE}/analytics/overview`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch {
+      // Return safe local zero state
+    }
+    return localOverview;
   },
 
   async getTopicAnalytics(): Promise<TopicAnalytics[]> {
-    const res = await fetch(`${API_BASE}/analytics/topics`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Failed to load topic analytics');
+    const localTopics = localStorageService.calculateTopicAnalytics();
+    if (localTopics.length > 0) return localTopics;
+
+    try {
+      const res = await fetch(`${API_BASE}/analytics/topics`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
     }
-    return await res.json();
+    return localTopics;
   },
 
   async getDifficultyAnalytics(): Promise<DifficultyAnalytics[]> {
-    const res = await fetch(`${API_BASE}/analytics/difficulty`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Failed to load difficulty analytics');
+    const localDiffs = localStorageService.calculateDifficultyAnalytics();
+    const hasData = localDiffs.some((d) => d.attempts > 0);
+    if (hasData) return localDiffs;
+
+    try {
+      const res = await fetch(`${API_BASE}/analytics/difficulty`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
     }
-    return await res.json();
+    return localDiffs;
   },
 
   async getLanguageAnalytics(): Promise<LanguageAnalytics[]> {
-    const res = await fetch(`${API_BASE}/analytics/languages`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Failed to load language analytics');
+    const localLangs = localStorageService.calculateLanguageAnalytics();
+    if (localLangs.length > 0) return localLangs;
+
+    try {
+      const res = await fetch(`${API_BASE}/analytics/languages`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
     }
-    return await res.json();
+    return localLangs;
   },
 
   async getPerformanceTrend(): Promise<PerformanceTrend[]> {
-    const res = await fetch(`${API_BASE}/analytics/trend`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Failed to load performance trend');
+    const localTrend = localStorageService.calculatePerformanceTrend();
+    if (localTrend.length > 0) return localTrend;
+
+    try {
+      const res = await fetch(`${API_BASE}/analytics/trend`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) return await res.json();
+    } catch {
+      // ignore
     }
-    return await res.json();
+    return localTrend;
   },
 
   async getAiInsights(): Promise<AiInsights> {
@@ -271,6 +316,7 @@ export const api = {
     if (!res.ok) {
       throw new Error(data.message || 'Failed to start AI mock interview');
     }
+    localStorageService.saveMockInterview(data);
     return data;
   },
 
@@ -284,27 +330,44 @@ export const api = {
     if (!res.ok) {
       throw new Error(data.message || 'Failed to submit interview answer');
     }
+    localStorageService.saveMockInterview(data);
     return data;
   },
 
   async getMockInterviews(): Promise<MockInterview[]> {
-    const res = await fetch(`${API_BASE}/mock-interviews`, {
-      headers: getAuthHeaders(),
-    });
-    if (!res.ok) {
-      throw new Error('Failed to load mock interview history');
+    try {
+      const res = await fetch(`${API_BASE}/mock-interviews`, {
+        headers: getAuthHeaders(),
+      });
+      if (res.ok) {
+        const remoteList: MockInterview[] = await res.json();
+        if (Array.isArray(remoteList)) {
+          remoteList.forEach((m) => localStorageService.saveMockInterview(m));
+        }
+      }
+    } catch {
+      // ignore
     }
-    return await res.json();
+    return localStorageService.getMockInterviews();
   },
 
   async getMockInterviewById(id: number): Promise<MockInterview> {
+    const local = localStorageService.getMockInterviewById(id);
+    if (local) return local;
+
     const res = await fetch(`${API_BASE}/mock-interviews/${id}`, {
       headers: getAuthHeaders(),
     });
     if (!res.ok) {
       throw new Error('Failed to load mock interview details');
     }
-    return await res.json();
+    const data = await res.json();
+    localStorageService.saveMockInterview(data);
+    return data;
+  },
+
+  clearLocalHistory(): void {
+    localStorageService.clearLocalHistory();
   },
 
   async getInterviews(): Promise<InterviewSession[]> {

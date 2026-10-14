@@ -1,33 +1,22 @@
 package com.codementor.api.entity;
 
-import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "users")
 public class User {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(nullable = false)
     private String name;
-
-    @Column(nullable = false, unique = true)
     private String email;
 
-    @com.fasterxml.jackson.annotation.JsonIgnore
-    @Column(nullable = false)
+    @JsonIgnore
     private String password;
 
-    @Column(nullable = false)
     private String role;
-
-    @Column(nullable = false)
     private LocalDateTime createdAt;
 
     public User() {
+        this.createdAt = LocalDateTime.now();
     }
 
     public User(String name, String email, String password, String role) {
@@ -36,13 +25,6 @@ public class User {
         this.password = password;
         this.role = role;
         this.createdAt = LocalDateTime.now();
-    }
-
-    @PrePersist
-    protected void onCreate() {
-        if (this.createdAt == null) {
-            this.createdAt = LocalDateTime.now();
-        }
     }
 
     public Long getId() {

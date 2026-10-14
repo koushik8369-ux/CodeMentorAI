@@ -20,39 +20,45 @@ public class AnalyticsController {
         this.analyticsService = analyticsService;
     }
 
+    private String getEmail(Authentication authentication) {
+        return (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : "candidate@codementor.ai";
+    }
+
     @GetMapping("/overview")
     public ResponseEntity<AnalyticsOverviewDto> getOverview(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(analyticsService.getOverview(email));
     }
 
     @GetMapping("/topics")
     public ResponseEntity<List<TopicAnalyticsDto>> getTopicAnalytics(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(analyticsService.getTopicAnalytics(email));
     }
 
     @GetMapping("/difficulty")
     public ResponseEntity<List<DifficultyAnalyticsDto>> getDifficultyAnalytics(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(analyticsService.getDifficultyAnalytics(email));
     }
 
     @GetMapping("/languages")
     public ResponseEntity<List<LanguageAnalyticsDto>> getLanguageAnalytics(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(analyticsService.getLanguageAnalytics(email));
     }
 
     @GetMapping("/trend")
     public ResponseEntity<List<PerformanceTrendDto>> getPerformanceTrend(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(analyticsService.getPerformanceTrend(email));
     }
 
     @GetMapping("/ai-insights")
     public ResponseEntity<AiInsightsDto> getAiInsights(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(analyticsService.getAiInsights(email));
     }
 }

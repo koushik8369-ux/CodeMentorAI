@@ -2,9 +2,9 @@ package com.codementor.api;
 
 import com.codementor.api.dto.*;
 import com.codementor.api.entity.*;
-import com.codementor.api.repository.InterviewRepository;
-import com.codementor.api.repository.UserRepository;
+import com.codementor.api.service.AuthService;
 import com.codementor.api.service.GeminiService;
+import com.codementor.api.service.InterviewService;
 import com.codementor.api.service.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,10 +39,10 @@ public class AnalyticsTests {
     private MockMvc mockMvc;
 
     @Autowired
-    private UserRepository userRepository;
+    private AuthService authService;
 
     @Autowired
-    private InterviewRepository interviewRepository;
+    private InterviewService interviewService;
 
     @Autowired
     private JwtService jwtService;
@@ -63,25 +63,27 @@ public class AnalyticsTests {
 
     @BeforeEach
     void setUp() {
-        interviewRepository.deleteAll();
-        userRepository.deleteAll();
+        interviewService.clearSessions();
+        authService.clearDemoUsers();
 
-        userAlice = userRepository.save(new User(
+        AuthResponse respAlice = authService.register(new RegisterRequest(
                 "Alice",
                 "alice@example.com",
-                passwordEncoder.encode("password123"),
-                "USER"
+                "password123"
         ));
+        userAlice = new User(respAlice.getUser().getName(), respAlice.getUser().getEmail(), "", respAlice.getUser().getRole());
+        userAlice.setId(respAlice.getUser().getId());
 
-        userBob = userRepository.save(new User(
+        AuthResponse respBob = authService.register(new RegisterRequest(
                 "Bob",
                 "bob@example.com",
-                passwordEncoder.encode("password123"),
-                "USER"
+                "password123"
         ));
+        userBob = new User(respBob.getUser().getName(), respBob.getUser().getEmail(), "", respBob.getUser().getRole());
+        userBob.setId(respBob.getUser().getId());
 
-        aliceToken = "Bearer " + jwtService.generateToken(userAlice);
-        bobToken = "Bearer " + jwtService.generateToken(userBob);
+        aliceToken = "Bearer " + respAlice.getToken();
+        bobToken = "Bearer " + respBob.getToken();
 
         AiInsightsDto mockInsights = new AiInsightsDto(
                 "Strong analytical foundation in Arrays with room for growth in Dynamic Programming.",
@@ -110,7 +112,8 @@ public class AnalyticsTests {
         interview.setStatus(status);
         interview.setStartedAt(completedAt != null ? completedAt.minusMinutes(30) : LocalDateTime.now());
         interview.setCompletedAt(completedAt);
-        return interviewRepository.save(interview);
+        interviewService.saveSession(interview);
+        return interview;
     }
 
     @Test

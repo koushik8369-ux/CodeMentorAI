@@ -1,72 +1,36 @@
 package com.codementor.api.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "mock_interview_questions")
 public class MockInterviewQuestion {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "mock_interview_id", nullable = false)
     @JsonIgnore
     private MockInterview mockInterview;
 
-    @Column(nullable = false)
     private int roundNumber;
-
-    @Column(columnDefinition = "TEXT", nullable = false)
     private String question;
-
-    @Column(columnDefinition = "TEXT")
     private String userAnswer;
-
     private Integer score;
-
-    @Column(columnDefinition = "TEXT")
     private String correctness;
-
-    @Column(columnDefinition = "TEXT")
     private String technicalDepth;
-
-    @Column(columnDefinition = "TEXT")
     private String communication;
-
-    @Column(columnDefinition = "TEXT")
     private String feedback;
-
-    @Column(columnDefinition = "TEXT")
     private String strengths;
-
-    @Column(columnDefinition = "TEXT")
     private String weaknesses;
-
-    @Column(columnDefinition = "TEXT")
     private String followUpQuestion;
-
-    @Column(columnDefinition = "TEXT")
     private String followUpAnswer;
-
     private Integer followUpScore;
-
-    @Column(columnDefinition = "TEXT")
     private String followUpFeedback;
-
     private boolean isFollowUpRequired = false;
-
     private boolean isFollowUpCompleted = false;
-
-    @Column(nullable = false)
     private LocalDateTime askedAt = LocalDateTime.now();
-
     private LocalDateTime answeredAt;
 
     public MockInterviewQuestion() {
+        this.askedAt = LocalDateTime.now();
     }
 
     public MockInterviewQuestion(MockInterview mockInterview, int roundNumber, String question) {
@@ -209,7 +173,7 @@ public class MockInterviewQuestion {
     }
 
     public void setFollowUpRequired(boolean followUpRequired) {
-        isFollowUpRequired = followUpRequired;
+        this.isFollowUpRequired = followUpRequired;
     }
 
     public boolean isFollowUpCompleted() {
@@ -217,7 +181,7 @@ public class MockInterviewQuestion {
     }
 
     public void setFollowUpCompleted(boolean followUpCompleted) {
-        isFollowUpCompleted = followUpCompleted;
+        this.isFollowUpCompleted = followUpCompleted;
     }
 
     public LocalDateTime getAskedAt() {

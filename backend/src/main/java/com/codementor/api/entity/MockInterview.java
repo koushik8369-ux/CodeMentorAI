@@ -1,75 +1,36 @@
 package com.codementor.api.entity;
 
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Entity
-@Table(name = "mock_interviews")
 public class MockInterview {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
     private User user;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private MockInterviewType interviewType;
-
-    @Column(nullable = false)
     private String topic;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Difficulty difficulty;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private MockInterviewStatus status = MockInterviewStatus.IN_PROGRESS;
-
     private int currentRound = 1;
-
-    private int totalRounds = 5;
-
-    @Column(nullable = false)
+    private int totalRounds = 3;
     private LocalDateTime startedAt = LocalDateTime.now();
-
     private LocalDateTime completedAt;
-
     private Integer overallScore;
-
     private Integer technicalKnowledge;
-
     private Integer problemSolving;
-
     private Integer communication;
-
     private Integer confidence;
-
-    @Column(columnDefinition = "TEXT")
     private String overallFeedback;
-
-    @Column(columnDefinition = "TEXT")
     private String strengths;
-
-    @Column(columnDefinition = "TEXT")
     private String weaknesses;
-
-    @Column(columnDefinition = "TEXT")
     private String recommendations;
-
     private String readinessLevel;
-
-    @OneToMany(mappedBy = "mockInterview", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
-    @OrderBy("roundNumber ASC")
     private List<MockInterviewQuestion> questions = new ArrayList<>();
 
     public MockInterview() {
+        this.status = MockInterviewStatus.IN_PROGRESS;
+        this.startedAt = LocalDateTime.now();
     }
 
     public MockInterview(User user, MockInterviewType interviewType, String topic, Difficulty difficulty, int totalRounds) {
@@ -252,7 +213,10 @@ public class MockInterview {
     }
 
     public void addQuestion(MockInterviewQuestion question) {
-        questions.add(question);
+        if (this.questions == null) {
+            this.questions = new ArrayList<>();
+        }
+        this.questions.add(question);
         question.setMockInterview(this);
     }
 }

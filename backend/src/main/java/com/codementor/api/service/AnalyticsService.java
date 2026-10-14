@@ -1,10 +1,7 @@
 package com.codementor.api.service;
 
 import com.codementor.api.dto.*;
-import com.codementor.api.entity.*;
-import com.codementor.api.exception.ResourceNotFoundException;
-import com.codementor.api.repository.InterviewRepository;
-import com.codementor.api.repository.UserRepository;
+import com.codementor.api.entity.Difficulty;
 import org.springframework.stereotype.Service;
 
 import java.time.format.DateTimeFormatter;
@@ -14,21 +11,22 @@ import java.util.stream.Collectors;
 @Service
 public class AnalyticsService {
 
-    private final InterviewRepository interviewRepository;
-    private final UserRepository userRepository;
+    private final InterviewService interviewService;
     private final GeminiService geminiService;
 
-    public AnalyticsService(InterviewRepository interviewRepository,
-                            UserRepository userRepository,
-                            GeminiService geminiService) {
-        this.interviewRepository = interviewRepository;
-        this.userRepository = userRepository;
+    public AnalyticsService(InterviewService interviewService, GeminiService geminiService) {
+        this.interviewService = interviewService;
         this.geminiService = geminiService;
     }
 
+    private List<InterviewResponse> getCompletedInterviews(String userEmail) {
+        return interviewService.getUserInterviews(userEmail).stream()
+                .filter(i -> "COMPLETED".equalsIgnoreCase(i.getStatus()))
+                .collect(Collectors.toList());
+    }
+
     public AnalyticsOverviewDto getOverview(String userEmail) {
-        User user = getUser(userEmail);
-        List<Interview> completed = interviewRepository.findByUserAndStatusOrderByCompletedAtDesc(user, InterviewStatus.COMPLETED);
+        List<InterviewResponse> completed = getCompletedInterviews(userEmail);
 
         if (completed.isEmpty()) {
             return new AnalyticsOverviewDto(0, 0.0, 0, 0, 0, "N/A", "N/A", 0.0);
@@ -47,16 +45,15 @@ public class AnalyticsService {
                 .mapToInt(i -> i.getScore() != null ? i.getScore() : 0)
                 .min().orElse(0);
 
-        // Recent average score (up to last 5 completed)
         double recentAvg = roundOneDecimal(completed.stream()
                 .limit(5)
                 .mapToInt(i -> i.getScore() != null ? i.getScore() : 0)
                 .average().orElse(0.0));
 
-        // Group by topic to find strongest and weakest
         Map<String, Double> topicAverages = completed.stream()
+                .filter(i -> i.getTopic() != null)
                 .collect(Collectors.groupingBy(
-                        Interview::getTopic,
+                        InterviewResponse::getTopic,
                         Collectors.averagingInt(i -> i.getScore() != null ? i.getScore() : 0)
                 ));
 
@@ -83,20 +80,20 @@ public class AnalyticsService {
     }
 
     public List<TopicAnalyticsDto> getTopicAnalytics(String userEmail) {
-        User user = getUser(userEmail);
-        List<Interview> completed = interviewRepository.findByUserAndStatus(user, InterviewStatus.COMPLETED);
+        List<InterviewResponse> completed = getCompletedInterviews(userEmail);
 
         if (completed.isEmpty()) {
             return Collections.emptyList();
         }
 
-        Map<String, List<Interview>> grouped = completed.stream()
-                .collect(Collectors.groupingBy(Interview::getTopic));
+        Map<String, List<InterviewResponse>> grouped = completed.stream()
+                .filter(i -> i.getTopic() != null)
+                .collect(Collectors.groupingBy(InterviewResponse::getTopic));
 
         return grouped.entrySet().stream()
                 .map(entry -> {
                     String topic = entry.getKey();
-                    List<Interview> list = entry.getValue();
+                    List<InterviewResponse> list = entry.getValue();
                     int attempts = list.size();
                     double avg = roundOneDecimal(list.stream()
                             .mapToInt(i -> i.getScore() != null ? i.getScore() : 0)
@@ -111,15 +108,14 @@ public class AnalyticsService {
     }
 
     public List<DifficultyAnalyticsDto> getDifficultyAnalytics(String userEmail) {
-        User user = getUser(userEmail);
-        List<Interview> completed = interviewRepository.findByUserAndStatus(user, InterviewStatus.COMPLETED);
+        List<InterviewResponse> completed = getCompletedInterviews(userEmail);
 
         Difficulty[] diffs = Difficulty.values();
         List<DifficultyAnalyticsDto> result = new ArrayList<>();
 
         for (Difficulty d : diffs) {
-            List<Interview> list = completed.stream()
-                    .filter(i -> i.getDifficulty() == d)
+            List<InterviewResponse> list = completed.stream()
+                    .filter(i -> d.name().equalsIgnoreCase(i.getDifficulty()))
                     .collect(Collectors.toList());
 
             int attempts = list.size();
@@ -137,20 +133,19 @@ public class AnalyticsService {
     }
 
     public List<LanguageAnalyticsDto> getLanguageAnalytics(String userEmail) {
-        User user = getUser(userEmail);
-        List<Interview> completed = interviewRepository.findByUserAndStatus(user, InterviewStatus.COMPLETED);
+        List<InterviewResponse> completed = getCompletedInterviews(userEmail);
 
         if (completed.isEmpty()) {
             return Collections.emptyList();
         }
 
-        Map<String, List<Interview>> grouped = completed.stream()
-                .collect(Collectors.groupingBy(i -> i.getLanguage() != null ? i.getLanguage().name() : "OTHER"));
+        Map<String, List<InterviewResponse>> grouped = completed.stream()
+                .collect(Collectors.groupingBy(i -> i.getLanguage() != null ? i.getLanguage() : "OTHER"));
 
         return grouped.entrySet().stream()
                 .map(entry -> {
                     String lang = entry.getKey();
-                    List<Interview> list = entry.getValue();
+                    List<InterviewResponse> list = entry.getValue();
                     int attempts = list.size();
                     double avg = roundOneDecimal(list.stream()
                             .mapToInt(i -> i.getScore() != null ? i.getScore() : 0)
@@ -162,14 +157,14 @@ public class AnalyticsService {
     }
 
     public List<PerformanceTrendDto> getPerformanceTrend(String userEmail) {
-        User user = getUser(userEmail);
-        List<Interview> completed = interviewRepository.findByUserAndStatusOrderByCompletedAtAsc(user, InterviewStatus.COMPLETED);
+        List<InterviewResponse> completed = getCompletedInterviews(userEmail);
 
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
         return completed.stream()
+                .sorted(Comparator.comparing(i -> i.getCompletedAt() != null ? i.getCompletedAt() : (i.getStartedAt() != null ? i.getStartedAt() : java.time.LocalDateTime.MIN)))
                 .map(i -> {
-                    String date = (i.getCompletedAt() != null ? i.getCompletedAt() : i.getStartedAt()).format(formatter);
+                    String date = (i.getCompletedAt() != null ? i.getCompletedAt() : (i.getStartedAt() != null ? i.getStartedAt() : java.time.LocalDateTime.now())).format(formatter);
                     int score = i.getScore() != null ? i.getScore() : 0;
                     return new PerformanceTrendDto(date, score);
                 })
@@ -177,8 +172,7 @@ public class AnalyticsService {
     }
 
     public AiInsightsDto getAiInsights(String userEmail) {
-        User user = getUser(userEmail);
-        List<Interview> completed = interviewRepository.findByUserAndStatusOrderByCompletedAtDesc(user, InterviewStatus.COMPLETED);
+        List<InterviewResponse> completed = getCompletedInterviews(userEmail);
 
         if (completed.isEmpty()) {
             return new AiInsightsDto(
@@ -203,16 +197,15 @@ public class AnalyticsService {
         List<DifficultyAnalyticsDto> diffs = getDifficultyAnalytics(userEmail);
         List<LanguageAnalyticsDto> langs = getLanguageAnalytics(userEmail);
 
-        // Extract aggregated strengths and weaknesses without PII
         List<String> collectedWeaknesses = completed.stream()
-                .map(Interview::getWeaknesses)
-                .filter(Objects::nonNull)
+                .filter(i -> i.getWeaknesses() != null)
+                .flatMap(i -> i.getWeaknesses().stream())
                 .limit(4)
                 .collect(Collectors.toList());
 
         List<String> collectedRecommendations = completed.stream()
-                .map(Interview::getRecommendations)
-                .filter(Objects::nonNull)
+                .filter(i -> i.getRecommendations() != null)
+                .flatMap(i -> i.getRecommendations().stream())
                 .limit(4)
                 .collect(Collectors.toList());
 
@@ -254,11 +247,6 @@ public class AnalyticsService {
                     "Steady progress across recent coding challenges."
             );
         }
-    }
-
-    private User getUser(String userEmail) {
-        return userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
     }
 
     private double roundOneDecimal(double val) {

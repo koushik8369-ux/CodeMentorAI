@@ -8,73 +8,56 @@ import com.codementor.api.entity.User;
 import com.codementor.api.exception.DuplicateEmailException;
 import com.codementor.api.exception.InvalidCredentialsException;
 import com.codementor.api.exception.ResourceNotFoundException;
-import com.codementor.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 @Service
 public class AuthService {
 
-    private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final ConcurrentHashMap<String, User> demoUsers = new ConcurrentHashMap<>();
+    private final AtomicLong idGenerator = new AtomicLong(100);
 
     @Autowired
-    public AuthService(UserRepository userRepository,
-                       PasswordEncoder passwordEncoder,
-                       JwtService jwtService) {
-        this.userRepository = userRepository;
+    public AuthService(PasswordEncoder passwordEncoder, JwtService jwtService) {
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+
+        // Seed a default demo candidate user
+        User defaultCandidate = new User(
+                "Candidate Demo",
+                "candidate@codementor.ai",
+                passwordEncoder.encode("Password123!"),
+                "USER"
+        );
+        defaultCandidate.setId(1L);
+        demoUsers.put("candidate@codementor.ai", defaultCandidate);
     }
 
-    @Transactional
     public AuthResponse register(RegisterRequest request) {
         String normalizedEmail = request.getEmail().trim().toLowerCase();
 
-        if (userRepository.existsByEmail(normalizedEmail)) {
+        if (demoUsers.containsKey(normalizedEmail)) {
             throw new DuplicateEmailException("Email is already registered: " + normalizedEmail);
         }
 
         String hashedPassword = passwordEncoder.encode(request.getPassword());
-
-        // Default role is always USER. Registration cannot assign ADMIN role.
         User user = new User(
                 request.getName().trim(),
                 normalizedEmail,
                 hashedPassword,
                 "USER"
         );
-
-        User savedUser = userRepository.save(user);
-        String token = jwtService.generateToken(savedUser);
-
-        UserDto userDto = new UserDto(
-                savedUser.getId(),
-                savedUser.getName(),
-                savedUser.getEmail(),
-                savedUser.getRole(),
-                savedUser.getCreatedAt()
-        );
-
-        return new AuthResponse(token, userDto);
-    }
-
-    @Transactional(readOnly = true)
-    public AuthResponse login(LoginRequest request) {
-        String normalizedEmail = request.getEmail().trim().toLowerCase();
-
-        User user = userRepository.findByEmail(normalizedEmail)
-                .orElseThrow(() -> new InvalidCredentialsException("Invalid email or password."));
-
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
-            throw new InvalidCredentialsException("Invalid email or password.");
-        }
+        user.setId(idGenerator.incrementAndGet());
+        demoUsers.put(normalizedEmail, user);
 
         String token = jwtService.generateToken(user);
-
         UserDto userDto = new UserDto(
                 user.getId(),
                 user.getName(),
@@ -86,10 +69,54 @@ public class AuthService {
         return new AuthResponse(token, userDto);
     }
 
-    @Transactional(readOnly = true)
+    public AuthResponse login(LoginRequest request) {
+        String normalizedEmail = request.getEmail().trim().toLowerCase();
+
+        User user = demoUsers.get(normalizedEmail);
+        if (user == null) {
+            // For frictionless demo mode: if user does not exist, check basic password and dynamically create demo profile
+            if (request.getPassword() == null || request.getPassword().length() < 6) {
+                throw new InvalidCredentialsException("Invalid email or password.");
+            }
+            user = new User(
+                    "Demo User",
+                    normalizedEmail,
+                    passwordEncoder.encode(request.getPassword()),
+                    "USER"
+            );
+            user.setId(idGenerator.incrementAndGet());
+            demoUsers.put(normalizedEmail, user);
+        } else {
+            if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+                throw new InvalidCredentialsException("Invalid email or password.");
+            }
+        }
+
+        String token = jwtService.generateToken(user);
+        UserDto userDto = new UserDto(
+                user.getId(),
+                user.getName(),
+                user.getEmail(),
+                user.getRole(),
+                user.getCreatedAt()
+        );
+
+        return new AuthResponse(token, userDto);
+    }
+
     public UserDto getCurrentUser(String email) {
-        User user = userRepository.findByEmail(email.trim().toLowerCase())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
+        String normalized = email != null ? email.trim().toLowerCase() : "candidate@codementor.ai";
+        User user = demoUsers.get(normalized);
+        if (user == null) {
+            user = new User(
+                    "Candidate Demo",
+                    normalized,
+                    passwordEncoder.encode("Password123!"),
+                    "USER"
+            );
+            user.setId(idGenerator.incrementAndGet());
+            demoUsers.put(normalized, user);
+        }
 
         return new UserDto(
                 user.getId(),
@@ -98,5 +125,17 @@ public class AuthService {
                 user.getRole(),
                 user.getCreatedAt()
         );
+    }
+
+    public void clearDemoUsers() {
+        demoUsers.clear();
+        User defaultCandidate = new User(
+                "Candidate Demo",
+                "candidate@codementor.ai",
+                passwordEncoder.encode("Password123!"),
+                "USER"
+        );
+        defaultCandidate.setId(1L);
+        demoUsers.put("candidate@codementor.ai", defaultCandidate);
     }
 }

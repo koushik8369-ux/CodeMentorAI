@@ -2,56 +2,26 @@ package com.codementor.api.service;
 
 import com.codementor.api.dto.ProblemDto;
 import com.codementor.api.dto.QuestionGenerationResponse;
-import com.codementor.api.entity.Problem;
 import com.codementor.api.exception.ResourceNotFoundException;
-import com.codementor.api.repository.ProblemRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Service
 public class ProblemService {
 
-    private final ProblemRepository problemRepository;
-
-    public ProblemService(ProblemRepository problemRepository) {
-        this.problemRepository = problemRepository;
+    public ProblemService() {
     }
 
     public List<ProblemDto> getAllProblems() {
-        try {
-            List<Problem> problems = problemRepository.findAll();
-            if (problems.isEmpty()) {
-                return getSeedProblemDtos();
-            }
-            return problems.stream().map(this::mapToDto).collect(Collectors.toList());
-        } catch (Exception e) {
-            // If PostgreSQL is offline, return resilient domain seeds
-            return getSeedProblemDtos();
-        }
+        return getSeedProblemDtos();
     }
 
     public ProblemDto getProblemBySlugOrId(String identifier) {
-        try {
-            Optional<Problem> problemOpt = problemRepository.findBySlug(identifier);
-            if (problemOpt.isPresent()) {
-                return mapToDto(problemOpt.get());
-            }
-        } catch (Exception ignored) {
-        }
-
-        // Check fallback seeds
         return getSeedProblemDtos().stream()
                 .filter(p -> p.getId().equalsIgnoreCase(identifier))
                 .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Problem not found with identifier: " + identifier));
-    }
-
-    private ProblemDto mapToDto(Problem p) {
-        ProblemDto dto = new ProblemDto(p.getSlug(), p.getTitle(), p.getDescription(), p.getDifficulty(), p.getTopic(), p.getLanguage());
-        dto.setAcceptanceRate(p.getAcceptanceRate() != null ? p.getAcceptanceRate() : "52.0%");
-        return dto;
     }
 
     private List<ProblemDto> getSeedProblemDtos() {

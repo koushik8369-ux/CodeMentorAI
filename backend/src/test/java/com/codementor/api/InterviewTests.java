@@ -2,9 +2,9 @@ package com.codementor.api;
 
 import com.codementor.api.dto.*;
 import com.codementor.api.entity.User;
-import com.codementor.api.repository.InterviewRepository;
-import com.codementor.api.repository.UserRepository;
+import com.codementor.api.service.AuthService;
 import com.codementor.api.service.GeminiService;
+import com.codementor.api.service.InterviewService;
 import com.codementor.api.service.JwtService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,7 +23,6 @@ import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.*;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -40,10 +39,10 @@ public class InterviewTests {
     private MockMvc mockMvc;
 
     @Autowired
-    private UserRepository userRepository;
+    private AuthService authService;
 
     @Autowired
-    private InterviewRepository interviewRepository;
+    private InterviewService interviewService;
 
     @Autowired
     private JwtService jwtService;
@@ -64,25 +63,18 @@ public class InterviewTests {
 
     @BeforeEach
     void setUp() {
-        interviewRepository.deleteAll();
-        userRepository.deleteAll();
+        interviewService.clearSessions();
+        authService.clearDemoUsers();
 
-        candidateUser = userRepository.save(new User(
-                "Alice Candidate",
-                "alice@example.com",
-                passwordEncoder.encode("password123"),
-                "USER"
-        ));
+        AuthResponse respAlice = authService.register(new RegisterRequest("Alice Candidate", "alice@example.com", "password123"));
+        candidateUser = new User(respAlice.getUser().getName(), respAlice.getUser().getEmail(), "", respAlice.getUser().getRole());
+        candidateUser.setId(respAlice.getUser().getId());
+        candidateToken = "Bearer " + respAlice.getToken();
 
-        anotherUser = userRepository.save(new User(
-                "Bob Engineer",
-                "bob@example.com",
-                passwordEncoder.encode("password123"),
-                "USER"
-        ));
-
-        candidateToken = "Bearer " + jwtService.generateToken(candidateUser);
-        anotherToken = "Bearer " + jwtService.generateToken(anotherUser);
+        AuthResponse respBob = authService.register(new RegisterRequest("Bob Engineer", "bob@example.com", "password123"));
+        anotherUser = new User(respBob.getUser().getName(), respBob.getUser().getEmail(), "", respBob.getUser().getRole());
+        anotherUser.setId(respBob.getUser().getId());
+        anotherToken = "Bearer " + respBob.getToken();
 
         GeneratedProblemDto mockProblem = new GeneratedProblemDto(
                 "Two Sum Challenge",

@@ -1,91 +1,38 @@
 package com.codementor.api.entity;
 
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "interviews")
 public class Interview {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
     private User user;
-
-    @Column(nullable = false)
     private String topic;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Difficulty difficulty;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private Language language;
-
-    @Column(nullable = false)
     private String problemTitle;
-
-    @Column(columnDefinition = "TEXT")
     private String problemDescription;
-
-    @Column(columnDefinition = "TEXT")
     private String inputFormat;
-
-    @Column(columnDefinition = "TEXT")
     private String outputFormat;
-
-    @Column(columnDefinition = "TEXT")
     private String constraints;
-
-    @Column(columnDefinition = "TEXT")
     private String examples;
-
-    @Column(columnDefinition = "TEXT")
     private String starterCode;
-
-    @Column(columnDefinition = "TEXT")
     private String userCode;
-
     private Integer score;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
     private InterviewStatus status;
-
-    @Column(columnDefinition = "TEXT")
     private String correctness;
-
-    @Column(columnDefinition = "TEXT")
     private String codeQuality;
-
-    @Column(columnDefinition = "TEXT")
     private String timeComplexity;
-
-    @Column(columnDefinition = "TEXT")
     private String spaceComplexity;
-
-    @Column(columnDefinition = "TEXT")
     private String aiFeedback;
-
-    @Column(columnDefinition = "TEXT")
     private String strengths;
-
-    @Column(columnDefinition = "TEXT")
     private String weaknesses;
-
-    @Column(columnDefinition = "TEXT")
     private String recommendations;
-
-    @Column(nullable = false)
     private LocalDateTime startedAt;
-
     private LocalDateTime completedAt;
 
     public Interview() {
+        this.status = InterviewStatus.IN_PROGRESS;
+        this.startedAt = LocalDateTime.now();
     }
 
     public Interview(User user, String topic, Difficulty difficulty, Language language,
@@ -99,16 +46,6 @@ public class Interview {
         this.starterCode = starterCode;
         this.status = InterviewStatus.IN_PROGRESS;
         this.startedAt = LocalDateTime.now();
-    }
-
-    @PrePersist
-    protected void onCreate() {
-        if (this.startedAt == null) {
-            this.startedAt = LocalDateTime.now();
-        }
-        if (this.status == null) {
-            this.status = InterviewStatus.IN_PROGRESS;
-        }
     }
 
     public Long getId() {
@@ -125,10 +62,6 @@ public class Interview {
 
     public void setUser(User user) {
         this.user = user;
-    }
-
-    public Long getUserId() {
-        return user != null ? user.getId() : null;
     }
 
     public String getTopic() {

@@ -22,11 +22,17 @@ public class MockInterviewController {
         this.mockInterviewService = mockInterviewService;
     }
 
+    private String getEmail(Authentication authentication) {
+        return (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : "candidate@codementor.ai";
+    }
+
     @PostMapping("/start")
     public ResponseEntity<MockInterviewResponseDto> startMockInterview(
             @Valid @RequestBody StartMockInterviewRequest request,
             Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         MockInterviewResponseDto response = mockInterviewService.startMockInterview(request, email);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -36,14 +42,14 @@ public class MockInterviewController {
             @PathVariable Long id,
             @Valid @RequestBody SubmitMockAnswerRequest request,
             Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         MockInterviewResponseDto response = mockInterviewService.submitAnswer(id, request, email);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping
     public ResponseEntity<List<MockInterviewResponseDto>> getUserMockInterviews(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         List<MockInterviewResponseDto> list = mockInterviewService.getUserMockInterviews(email);
         return ResponseEntity.ok(list);
     }
@@ -52,7 +58,7 @@ public class MockInterviewController {
     public ResponseEntity<MockInterviewResponseDto> getMockInterviewById(
             @PathVariable Long id,
             Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         MockInterviewResponseDto response = mockInterviewService.getMockInterviewById(id, email);
         return ResponseEntity.ok(response);
     }

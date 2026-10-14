@@ -3,8 +3,6 @@ package com.codementor.api.service;
 import com.codementor.api.dto.*;
 import com.codementor.api.entity.*;
 import com.codementor.api.exception.ResourceNotFoundException;
-import com.codementor.api.repository.InterviewRepository;
-import com.codementor.api.repository.UserRepository;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.security.access.AccessDeniedException;
@@ -13,31 +11,29 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 @Service
 public class InterviewService {
 
-    private final InterviewRepository interviewRepository;
-    private final UserRepository userRepository;
+    private final AuthService authService;
     private final GeminiService geminiService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ConcurrentHashMap<Long, Interview> interviewSessions = new ConcurrentHashMap<>();
+    private final AtomicLong idGenerator = new AtomicLong(1000);
 
-    // Fallback in-memory list for transient resilience
-    private final List<InterviewResponse> fallbackSessions = new CopyOnWriteArrayList<>();
-
-    public InterviewService(InterviewRepository interviewRepository,
-                            UserRepository userRepository,
-                            GeminiService geminiService) {
-        this.interviewRepository = interviewRepository;
-        this.userRepository = userRepository;
+    public InterviewService(AuthService authService, GeminiService geminiService) {
+        this.authService = authService;
         this.geminiService = geminiService;
     }
 
     public InterviewResponse startInterview(StartInterviewRequest request, String userEmail) {
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
+        String email = (userEmail != null && !userEmail.isBlank()) ? userEmail : "candidate@codementor.ai";
+        UserDto userDto = authService.getCurrentUser(email);
+        User user = new User(userDto.getName(), userDto.getEmail(), "", userDto.getRole());
+        user.setId(userDto.getId());
 
         Difficulty difficulty = Difficulty.fromString(request.getDifficulty());
         Language language = Language.fromString(request.getLanguage());
@@ -55,6 +51,7 @@ public class InterviewService {
                 problem.getStarterCode()
         );
 
+        interview.setId(idGenerator.incrementAndGet());
         interview.setInputFormat(problem.getInputFormat());
         interview.setOutputFormat(problem.getOutputFormat());
 
@@ -64,8 +61,8 @@ public class InterviewService {
         } catch (Exception ignored) {
         }
 
-        Interview saved = interviewRepository.save(interview);
-        return mapToResponse(saved);
+        interviewSessions.put(interview.getId(), interview);
+        return mapToResponse(interview);
     }
 
     public InterviewResponse submitInterview(Long id, SubmitInterviewRequest request, String userEmail) {
@@ -73,14 +70,16 @@ public class InterviewService {
             throw new IllegalArgumentException("Submitted code cannot be empty");
         }
 
-        Interview interview = interviewRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Interview not found with id: " + id));
+        Interview interview = interviewSessions.get(id);
+        if (interview == null) {
+            throw new ResourceNotFoundException("Interview not found with id: " + id);
+        }
 
-        if (!interview.getUser().getEmail().equalsIgnoreCase(userEmail)) {
+        if (interview.getUser() != null && !interview.getUser().getEmail().equalsIgnoreCase(userEmail)) {
             throw new AccessDeniedException("You are not authorized to submit this interview");
         }
 
-        if (interview.getStatus() != InterviewStatus.IN_PROGRESS) {
+        if (interview.getStatus() == InterviewStatus.COMPLETED) {
             throw new IllegalStateException("Interview has already been completed");
         }
 
@@ -111,49 +110,42 @@ public class InterviewService {
         } catch (Exception ignored) {
         }
 
-        Interview updated = interviewRepository.save(interview);
-        return mapToResponse(updated);
+        interviewSessions.put(interview.getId(), interview);
+        return mapToResponse(interview);
     }
 
     public List<InterviewResponse> getUserInterviews(String userEmail) {
-        User user = userRepository.findByEmail(userEmail)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userEmail));
-
-        List<Interview> list = interviewRepository.findByUserOrderByStartedAtDesc(user);
-        return list.stream().map(this::mapToResponse).collect(Collectors.toList());
+        String email = (userEmail != null && !userEmail.isBlank()) ? userEmail.toLowerCase() : "candidate@codementor.ai";
+        return interviewSessions.values().stream()
+                .filter(i -> i.getUser() == null || i.getUser().getEmail() == null || i.getUser().getEmail().equalsIgnoreCase(email))
+                .sorted((a, b) -> b.getStartedAt().compareTo(a.getStartedAt()))
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     public InterviewResponse getInterviewById(Long id, String userEmail) {
-        Interview interview = interviewRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Interview not found with id: " + id));
+        Interview interview = interviewSessions.get(id);
+        if (interview == null) {
+            throw new ResourceNotFoundException("Interview not found with id: " + id);
+        }
 
-        if (!interview.getUser().getEmail().equalsIgnoreCase(userEmail)) {
+        if (interview.getUser() != null && !interview.getUser().getEmail().equalsIgnoreCase(userEmail)) {
             throw new AccessDeniedException("You are not authorized to view this interview");
         }
 
         return mapToResponse(interview);
     }
 
-    // Backward-compatible methods
     public List<InterviewResponse> getAllInterviews() {
-        try {
-            List<Interview> list = interviewRepository.findAllByOrderByStartedAtDesc();
-            if (!list.isEmpty()) {
-                return list.stream().map(this::mapToResponse).collect(Collectors.toList());
-            }
-        } catch (Exception ignored) {
-        }
-        return fallbackSessions;
+        return interviewSessions.values().stream()
+                .sorted((a, b) -> b.getStartedAt().compareTo(a.getStartedAt()))
+                .map(this::mapToResponse)
+                .collect(Collectors.toList());
     }
 
     public InterviewResponse createInterview(InterviewRequest request) {
-        User user = userRepository.findById(request.getUserId() != null ? request.getUserId() : 1L)
-                .orElseGet(() -> userRepository.findAll().stream().findFirst().orElse(null));
-
-        if (user == null) {
-            user = new User("Candidate", "candidate@example.com", "password", "USER");
-            user = userRepository.save(user);
-        }
+        User user = new User("Candidate", "candidate@codementor.ai", "", "USER");
+        user.setId(1L);
 
         Difficulty difficulty = Difficulty.fromString(request.getDifficulty());
         Language language = Language.fromString(request.getLanguage());
@@ -168,17 +160,29 @@ public class InterviewService {
                 "Solve the algorithmic problem efficiently.",
                 "// Starter code in " + language
         );
+        interview.setId(idGenerator.incrementAndGet());
         interview.setScore(80);
         interview.setStatus(InterviewStatus.IN_PROGRESS);
 
-        Interview saved = interviewRepository.save(interview);
-        return mapToResponse(saved);
+        interviewSessions.put(interview.getId(), interview);
+        return mapToResponse(interview);
+    }
+
+    public void saveSession(Interview interview) {
+        if (interview.getId() == null) {
+            interview.setId(idGenerator.incrementAndGet());
+        }
+        interviewSessions.put(interview.getId(), interview);
+    }
+
+    public void clearSessions() {
+        interviewSessions.clear();
     }
 
     public InterviewResponse mapToResponse(Interview i) {
         InterviewResponse resp = new InterviewResponse();
         resp.setId(i.getId());
-        resp.setUserId(i.getUser() != null ? i.getUser().getId() : null);
+        resp.setUserId(i.getUser() != null ? i.getUser().getId() : 1L);
         resp.setTopic(i.getTopic());
         resp.setDifficulty(i.getDifficulty() != null ? i.getDifficulty().name() : "MEDIUM");
         resp.setLanguage(i.getLanguage() != null ? i.getLanguage().name() : "JAVA");

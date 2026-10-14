@@ -1,50 +1,24 @@
 package com.codementor.api.entity;
 
-import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
-@Entity
-@Table(name = "problems")
 public class Problem {
 
-    @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-
-    @Column(nullable = false, unique = true)
     private String slug;
-
-    @Column(nullable = false)
     private String title;
-
-    @Column(columnDefinition = "TEXT", nullable = false)
     private String description;
-
-    @Column(nullable = false)
     private String difficulty;
-
-    @Column(nullable = false)
     private String topic;
-
-    @Column(nullable = false)
     private String language;
-
-    @Column(name = "acceptance_rate")
     private String acceptanceRate;
-
-    @Column(columnDefinition = "TEXT")
     private String examplesJson;
-
-    @Column(columnDefinition = "TEXT")
     private String constraintsJson;
-
-    @Column(columnDefinition = "TEXT")
     private String starterCodeJson;
-
-    @Column(nullable = false)
     private LocalDateTime createdAt;
 
     public Problem() {
+        this.createdAt = LocalDateTime.now();
     }
 
     public Problem(String slug, String title, String description, String difficulty, String topic, String language) {
@@ -55,13 +29,6 @@ public class Problem {
         this.topic = topic;
         this.language = language;
         this.createdAt = LocalDateTime.now();
-    }
-
-    @PrePersist
-    protected void onCreate() {
-        if (this.createdAt == null) {
-            this.createdAt = LocalDateTime.now();
-        }
     }
 
     public Long getId() {

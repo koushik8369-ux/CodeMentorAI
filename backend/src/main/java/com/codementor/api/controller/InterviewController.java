@@ -20,10 +20,16 @@ public class InterviewController {
         this.interviewService = interviewService;
     }
 
+    private String getEmail(Authentication authentication) {
+        return (authentication != null && authentication.getName() != null)
+                ? authentication.getName()
+                : "candidate@codementor.ai";
+    }
+
     @PostMapping("/start")
     public ResponseEntity<InterviewResponse> startInterview(@Valid @RequestBody StartInterviewRequest request,
                                                            Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         InterviewResponse response = interviewService.startInterview(request, email);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
@@ -32,27 +38,27 @@ public class InterviewController {
     public ResponseEntity<InterviewResponse> submitInterview(@PathVariable Long id,
                                                             @Valid @RequestBody SubmitInterviewRequest request,
                                                             Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         InterviewResponse response = interviewService.submitInterview(id, request, email);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping
     public ResponseEntity<List<InterviewResponse>> getUserInterviews(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(interviewService.getUserInterviews(email));
     }
 
     @GetMapping("/history")
     public ResponseEntity<List<InterviewResponse>> getInterviewHistory(Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(interviewService.getUserInterviews(email));
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<InterviewResponse> getInterviewById(@PathVariable Long id,
                                                              Authentication authentication) {
-        String email = authentication.getName();
+        String email = getEmail(authentication);
         return ResponseEntity.ok(interviewService.getInterviewById(id, email));
     }
 
