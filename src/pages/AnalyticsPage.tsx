@@ -122,7 +122,7 @@ export const AnalyticsPage: React.FC = () => {
         {isLoading ? (
           <div className="py-24 flex flex-col items-center justify-center space-y-3 text-slate-400">
             <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-sm font-medium">Aggregating PostgreSQL interview statistics...</span>
+            <span className="text-sm font-medium">Aggregating local interview statistics...</span>
           </div>
         ) : !overview || overview.completedInterviews === 0 ? (
           /* Empty state when 0 completed interviews */

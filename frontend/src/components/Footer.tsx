@@ -23,7 +23,7 @@ export const Footer: React.FC = () => {
             <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
               <span>Spring Boot</span>
               <span aria-hidden="true">·</span>
-              <span>PostgreSQL</span>
+              <span>Zero-DB Engine</span>
               <span aria-hidden="true">·</span>
               <span>Gemini AI</span>
             </div>
@@ -94,7 +94,7 @@ export const Footer: React.FC = () => {
             </h4>
             <div className="space-y-2 text-xs">
               <p className="text-slate-400">
-                Standalone Spring Boot REST backend on port 8080 with PostgreSQL & Gemini API.
+                Standalone Spring Boot REST backend on port 8080 with Zero-DB browser storage & Gemini API.
               </p>
               <div className="pt-2">
                 <a

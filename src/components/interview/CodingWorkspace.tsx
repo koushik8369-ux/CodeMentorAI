@@ -269,9 +269,15 @@ export const CodingWorkspace: React.FC<CodingWorkspaceProps> = ({
             />
           </div>
 
-          {/* Editor Status Footer */}
-          <div className="bg-slate-950 border-t border-slate-800/80 px-4 py-2 flex items-center justify-between text-xs text-slate-500 font-mono">
-            <div>Lines: {code.split('\n').length} | Characters: {code.length}</div>
+          {/* Editor Status Footer with Evaluation Disclosure */}
+          <div className="bg-slate-950 border-t border-slate-800/80 px-4 py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs text-slate-500 font-mono">
+            <div className="flex items-center gap-3">
+              <span>Lines: {code.split('\n').length} | Characters: {code.length}</span>
+              <span className="text-slate-700">·</span>
+              <span className="text-cyan-400/90 text-[11px] font-sans">
+                Evaluation: Gemini AI Analysis (No Sandbox Execution)
+              </span>
+            </div>
             <div className="flex items-center gap-1.5 text-emerald-400">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
               <span>Workspace Ready</span>

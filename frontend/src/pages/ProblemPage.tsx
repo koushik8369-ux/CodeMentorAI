@@ -476,6 +476,9 @@ export const ProblemPage: React.FC = () => {
                   <Terminal className="h-3.5 w-3.5 text-indigo-400" />
                   Test Cases
                 </span>
+                <span className="text-[11px] text-cyan-400/90 font-sans border border-cyan-500/20 px-1.5 py-0.5 rounded bg-cyan-500/10 hidden sm:inline-block">
+                  AI Evaluated (Gemini Verification · No Sandbox Execution)
+                </span>
                 <div className="flex items-center gap-1">
                   {(problem.testCases || []).map((_, idx) => (
                     <button
