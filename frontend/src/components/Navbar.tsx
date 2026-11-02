@@ -104,10 +104,10 @@ export const Navbar: React.FC = () => {
 
         {/* Actions & Live Status */}
         <div className="hidden md:flex items-center gap-4">
-          {/* Health indicator */}
+          {/* Health / Architecture indicator */}
           <div className="flex items-center gap-1.5 text-xs font-mono text-slate-400 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>API: {health?.status || 'CONNECTED'}</span>
+            <span>Zero-DB Engine</span>
           </div>
 
           {isAuthenticated && user ? (
@@ -115,8 +115,8 @@ export const Navbar: React.FC = () => {
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-300">
                 <UserIcon className="w-3.5 h-3.5 text-emerald-400" />
                 <span className="font-medium text-white">{user.name}</span>
-                <span className="px-1.5 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-mono">
-                  {user.role}
+                <span className="text-[10px] text-emerald-400 font-mono">
+                  · Demo Mode
                 </span>
               </div>
               <button

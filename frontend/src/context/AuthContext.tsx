@@ -9,6 +9,7 @@ interface AuthContextType {
   isLoading: boolean;
   login: (payload: LoginPayload) => Promise<void>;
   register: (payload: RegisterPayload) => Promise<void>;
+  loginAsDemo: () => Promise<void>;
   logout: () => void;
 }
 
@@ -50,6 +51,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setToken(response.token);
   };
 
+  const loginAsDemo = async () => {
+    try {
+      const response = await api.login({
+        email: 'candidate@codementor.ai',
+        password: 'Password123!',
+      });
+      setUser(response.user);
+      setToken(response.token);
+    } catch {
+      // Local fallback for offline/demo operation
+      const fallbackUser: User = {
+        id: 1,
+        name: 'Candidate Demo',
+        email: 'candidate@codementor.ai',
+        role: 'USER',
+        createdAt: new Date().toISOString(),
+      };
+      const fallbackToken = 'demo-offline-token';
+      authStorage.setAuth(fallbackToken, fallbackUser);
+      setUser(fallbackUser);
+      setToken(fallbackToken);
+    }
+  };
+
   const logout = () => {
     authStorage.clearAuth();
     setUser(null);
@@ -65,6 +90,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         login,
         register,
+        loginAsDemo,
         logout,
       }}
     >

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Terminal, Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, Loader2, CheckCircle2 } from 'lucide-react';
+import { Terminal, Lock, Mail, User as UserIcon, ArrowRight, AlertCircle, Loader2, CheckCircle2, UserCheck } from 'lucide-react';
 
 export const RegisterPage: React.FC = () => {
   const [name, setName] = useState('');
@@ -11,8 +11,22 @@ export const RegisterPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { register } = useAuth();
+  const { register, loginAsDemo } = useAuth();
   const navigate = useNavigate();
+
+  const handleDemoLogin = async () => {
+    setError(null);
+    try {
+      setIsSubmitting(true);
+      await loginAsDemo();
+      navigate('/dashboard', { replace: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to launch demo mode.';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +98,34 @@ export const RegisterPage: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* 1-Click Candidate Demo Profile Mode */}
+          <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-slate-200 text-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-emerald-400 font-mono tracking-wider text-[11px] uppercase">
+                Instant Access · Zero Database
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">Local Storage</span>
+            </div>
+            <p className="text-slate-300 text-xs leading-relaxed">
+              Skip registration and jump straight into coding and mock interview prep with the default candidate demo profile.
+            </p>
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={isSubmitting}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-all shadow-md text-xs font-mono disabled:opacity-50"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Launch Demo Candidate Profile (1-Click)</span>
+            </button>
+          </div>
+
+          <div className="relative flex py-2 items-center mb-6">
+            <div className="flex-grow border-t border-slate-800"></div>
+            <span className="flex-shrink mx-4 text-xs font-mono text-slate-500 uppercase">Or register custom profile</span>
+            <div className="flex-grow border-t border-slate-800"></div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

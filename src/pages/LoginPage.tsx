@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Terminal, Lock, Mail, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
+import { Terminal, Lock, Mail, ArrowRight, AlertCircle, Loader2, UserCheck } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -9,11 +9,25 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const { login } = useAuth();
+  const { login, loginAsDemo } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname || '/dashboard';
+
+  const handleDemoLogin = async () => {
+    setError(null);
+    try {
+      setIsSubmitting(true);
+      await loginAsDemo();
+      navigate(from, { replace: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to launch demo mode.';
+      setError(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +80,34 @@ export const LoginPage: React.FC = () => {
               </div>
             </div>
           )}
+
+          {/* 1-Click Candidate Demo Profile Mode */}
+          <div className="mb-6 p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-slate-200 text-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-emerald-400 font-mono tracking-wider text-[11px] uppercase">
+                Local Demo Mode · Zero DB
+              </span>
+              <span className="text-[10px] text-slate-400 font-mono">Browser Scoped</span>
+            </div>
+            <p className="text-slate-300 text-xs leading-relaxed">
+              Run CodeMentor AI instantly. No database or registration required. Interview history and evaluations persist safely in your browser.
+            </p>
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={isSubmitting}
+              className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-all shadow-md text-xs font-mono disabled:opacity-50"
+            >
+              <UserCheck className="w-4 h-4" />
+              <span>Enter Candidate Demo Profile (1-Click)</span>
+            </button>
+          </div>
+
+          <div className="relative flex py-2 items-center mb-6">
+            <div className="flex-grow border-t border-slate-800"></div>
+            <span className="flex-shrink mx-4 text-xs font-mono text-slate-500 uppercase">Or sign in with email</span>
+            <div className="flex-grow border-t border-slate-800"></div>
+          </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
