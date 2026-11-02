@@ -22,9 +22,23 @@ import {
 } from '../types';
 import { localStorageService } from './localStorageService';
 
-// Spring Boot REST API Base URL
-// In development: defaults to http://localhost:8080/api
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api';
+// Spring Boot REST API Base URL:
+// 1. If VITE_API_BASE_URL is explicitly set (e.g. 'https://api.codementor.ai/api'), use it (trimming trailing slash).
+// 2. In deployed browser environments without explicit env variable, fall back to relative '/api' for reverse proxying.
+// 3. In local development on localhost, default to 'http://localhost:8080/api'.
+const resolveApiBase = (): string => {
+  const envUrl = import.meta.env.VITE_API_BASE_URL;
+  if (typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    const trimmed = envUrl.trim();
+    return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+  }
+  if (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+    return '/api';
+  }
+  return 'http://localhost:8080/api';
+};
+
+export const API_BASE = resolveApiBase();
 
 const TOKEN_KEY = 'codementor_auth_token';
 const USER_KEY = 'codementor_auth_user';

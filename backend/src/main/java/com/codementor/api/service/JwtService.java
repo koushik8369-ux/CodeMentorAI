@@ -17,6 +17,8 @@ import java.util.function.Function;
 @Service
 public class JwtService {
 
+    private static final String DEFAULT_FALLBACK_SECRET = "CodeMentorAISecretKeyForJwtTokenGeneration2026Secure256BitsMinimum";
+
     @Value("${jwt.secret:CodeMentorAISecretKeyForJwtTokenGeneration2026Secure256BitsMinimum}")
     private String jwtSecret;
 
@@ -24,7 +26,11 @@ public class JwtService {
     private long jwtExpirationMs;
 
     private SecretKey getSigningKey() {
-        byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
+        String effectiveSecret = jwtSecret;
+        if (effectiveSecret == null || effectiveSecret.trim().length() < 32) {
+            effectiveSecret = DEFAULT_FALLBACK_SECRET;
+        }
+        byte[] keyBytes = effectiveSecret.trim().getBytes(StandardCharsets.UTF_8);
         return Keys.hmacShaKeyFor(keyBytes);
     }
 

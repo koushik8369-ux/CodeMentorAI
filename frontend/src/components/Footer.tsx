@@ -1,6 +1,7 @@
 import React from 'react';
 import { Terminal, Github, Twitter, Linkedin, Heart } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { API_BASE } from '../services/api';
 
 export const Footer: React.FC = () => {
   return (
@@ -94,17 +95,17 @@ export const Footer: React.FC = () => {
             </h4>
             <div className="space-y-2 text-xs">
               <p className="text-slate-400">
-                Standalone Spring Boot REST backend on port 8080 with Zero-DB browser storage & Gemini API.
+                Spring Boot REST backend with Zero-DB browser storage & Gemini API.
               </p>
               <div className="pt-2">
                 <a
-                  href="http://localhost:8080/api/health"
+                  href={`${API_BASE}/health`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1.5 font-mono text-[11px] text-emerald-400 hover:underline"
                 >
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                  GET http://localhost:8080/api/health
+                  GET /api/health
                 </a>
               </div>
             </div>

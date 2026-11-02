@@ -65,10 +65,23 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
         List<String> origins = new ArrayList<>(Arrays.asList("http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"));
-        if (allowedOrigins != null && !allowedOrigins.isBlank() && !origins.contains(allowedOrigins.trim())) {
-            origins.add(allowedOrigins.trim());
+        
+        if (allowedOrigins != null && !allowedOrigins.isBlank()) {
+            String[] splitOrigins = allowedOrigins.split(",");
+            for (String origin : splitOrigins) {
+                String trimmed = origin.trim();
+                if (!trimmed.isEmpty() && !origins.contains(trimmed)) {
+                    origins.add(trimmed);
+                }
+            }
         }
-        config.setAllowedOrigins(origins);
+
+        if (origins.contains("*")) {
+            config.setAllowedOriginPatterns(List.of("*"));
+        } else {
+            config.setAllowedOrigins(origins);
+        }
+
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
         config.setExposedHeaders(List.of("Authorization"));

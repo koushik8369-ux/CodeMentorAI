@@ -92,6 +92,9 @@ export const LoginPage: React.FC = () => {
             <p className="text-slate-300 text-xs leading-relaxed">
               Run CodeMentor AI instantly. No database or registration required. Interview history and evaluations persist safely in your browser.
             </p>
+            <p className="text-[11px] text-amber-400/90 leading-tight">
+              Notice: Demo profile runs locally without multi-tenant cloud storage. Not designed for multi-user production data isolation.
+            </p>
             <button
               type="button"
               onClick={handleDemoLogin}

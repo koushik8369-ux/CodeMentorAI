@@ -13,17 +13,17 @@ CodeMentor AI empowers software engineers to conquer technical interviews throug
 │               React 19 + TypeScript Frontend           │
 │                                                        │
 │  - Browser localStorage (Interviews, Mocks, Analytics) │
-│  - Local Candidate Profile Mode                        │
+│  - 1-Click Candidate Demo Profile Mode                 │
 │  - Real-time Monaco-style Code Workspace               │
 └───────────────────────────┬────────────────────────────┘
                             │ REST API (JSON / Bearer Token)
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│          Spring Boot 3.3.4 Backend (Port 8080)         │
+│         Spring Boot 3.3.4 REST Backend (Port ${PORT})  │
 │                                                        │
 │  - Stateless AI Orchestration & Evaluation Engine      │
 │  - Zero Database Dependency (No PostgreSQL/JPA needed) │
-│  - Protected Gemini API Gateway                        │
+│  - Protected Gemini API Gateway (Header-Based Auth)    │
 └───────────────────────────┬────────────────────────────┘
                             │ HTTPS (Server-Side Only)
                             ▼
@@ -33,120 +33,201 @@ CodeMentor AI empowers software engineers to conquer technical interviews throug
 └────────────────────────────────────────────────────────┘
 ```
 
-There is **only one backend**: Java 21 + Spring Boot running statelessly on port 8080.
-The frontend uses Vite on port 3000/5173 and persists session data inside the browser's private local storage.
+The system operates with a **stateless, zero-database architecture**:
+- **Backend**: Java 21 + Spring Boot running statelessly on `${PORT:-8080}`. Performs AI orchestration, question generation, and solution grading via Gemini. No database connection is required or attempted.
+- **Frontend**: React 19 + Vite + TypeScript. Persists coding interview attempts, multi-round mock transcripts, and performance analytics locally in the candidate's browser storage.
 
 ---
 
 ## 🛠 Tech Stack
 
 - **Frontend**: React 19, Vite, TypeScript, Tailwind CSS, React Router 7, Lucide React
-- **Client Storage**: Typed, versioned browser `localStorage` service with graceful error handling and corruption recovery
+- **Client Storage**: Typed, versioned browser `localStorage` service (`v1`) with corrupt-data self-healing and non-destructive clearing
 - **Backend**: Java 21, Spring Boot 3.3.4, Spring Web, Spring Security, Bean Validation, JJWT
 - **Persistence**: Database-Free (Zero PostgreSQL, MySQL, MongoDB, or external database requirement)
-- **AI Integration**: Google Gemini API (`gemini-3.8-flash`), isolated exclusively to the Spring Boot server
+- **AI Integration**: Google Gemini API (`gemini-3.8-flash`), isolated exclusively to the Spring Boot server with deterministic heuristic fallbacks
 
 ---
 
-## 🚀 Getting Started
+## ✨ Features
 
-### 1. Environment Configuration
-
-Copy `.env.example` to `.env`:
-
-```bash
-cp .env.example .env
-```
-
-#### Environment Variables
-
-```ini
-# Google Gemini API Key (Required for live AI evaluations)
-GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-
-# Security & JWT Token Signing Secret (defaults to built-in secure key)
-JWT_SECRET=CodeMentorAISecretKeyForJwtTokenGeneration2026Secure256BitsMinimum
-
-# Frontend API Base URL (Pointing to Spring Boot REST backend)
-VITE_API_BASE_URL=http://localhost:8080/api
-```
-
-*Note: No database credentials (`DB_URL`, `DB_USERNAME`, `DB_PASSWORD`) are required.*
+1. **AI Problem Bank & Generator**:
+   - Curated catalog of classic data structures, algorithms, and system design problems.
+   - Dynamic Gemini problem generator for customized topics, roles, and difficulties.
+2. **Interactive Coding Workspace**:
+   - Split-pane coding interface with starter code across Java, Python, and TypeScript.
+   - Algorithmic correctness evaluation, time complexity $O(n)$, and space complexity analysis.
+   - Clear disclosure of AI evaluation without containerized remote sandbox execution.
+3. **Multi-Round AI Mock Technical Interview**:
+   - Supports `TECHNICAL`, `BEHAVIORAL`, and `MIXED` interview modes.
+   - Multi-round questioning with dynamic follow-ups based on candidate answers.
+   - Consolidated hiring committee final reports with readiness verdicts (`INTERVIEW READY`, `STRONG CANDIDATE`).
+4. **Zero-DB Analytics Dashboard**:
+   - Evaluates performance overview, topic strengths/weaknesses, and difficulty distributions directly from local browser history.
+   - Zero fabricated demo data in user analytics.
+5. **Local Candidate Demo Profile**:
+   - Instant 1-click access (`candidate@codementor.ai`) without registration friction.
+   - Clear disclosures regarding local client scoping.
 
 ---
 
-### 2. Running the Spring Boot Backend
+## ⚙️ Environment Variables
 
-The backend is located in `backend/`:
+### Backend Environment Variables
 
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `PORT` | Optional | `8080` | Port for Spring Boot HTTP server (provided automatically by Cloud Run, Render, Railway, Heroku) |
+| `GEMINI_API_KEY` | Recommended | Empty (fallback heuristics used) | Google Gemini API key; isolated strictly on server-side |
+| `GEMINI_MODEL` | Optional | `gemini-3.8-flash` | Gemini model identifier |
+| `JWT_SECRET` | Optional | 512-bit built-in seed | Secret key for JWT signing (fails safely to secure seed if too short) |
+| `CORS_ALLOWED_ORIGINS` | Optional | `http://localhost:5173,http://localhost:3000` | Comma-separated list of allowed frontend origins |
+| `APP_URL` | Optional | `http://localhost:5173` | Primary frontend application URL |
+
+### Frontend Build-Time Environment Variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `VITE_API_BASE_URL` | Optional | `http://localhost:8080/api` (dev) or `/api` (prod) | Base URL of the Spring Boot REST backend |
+
+---
+
+## 🔑 Google Gemini API Setup
+
+1. Obtain a free or paid API key from [Google AI Studio](https://aistudio.google.com/).
+2. Set `GEMINI_API_KEY` in the Spring Boot backend environment:
+   ```bash
+   export GEMINI_API_KEY="your-gemini-api-key"
+   ```
+3. The API key is sent via the secure `x-goog-api-key` header to Google Generative Language APIs and is **never** printed in server logs or sent to the browser.
+4. When `GEMINI_API_KEY` is not set or quota is exhausted, the backend automatically transitions to deterministic algorithmic evaluation heuristics without throwing 500 errors.
+
+---
+
+## 💻 Local Development Instructions
+
+### Prerequisites
+- Node.js 18+ and npm
+- Java 21 JDK
+- Maven 3.8+
+
+### 1. Start the Spring Boot Backend
 ```bash
 cd backend
 mvn spring-boot:run
 ```
-
-The Spring Boot REST API starts on `http://localhost:8080`.
+The REST API will listen on `http://localhost:8080`.
 
 Verify backend health:
-
 ```bash
 curl http://localhost:8080/api/health
 ```
 
-Expected response:
-```json
-{
-  "status": "UP",
-  "service": "CodeMentor AI",
-  "database": "Stateless AI Engine (Zero Database)"
-}
-```
-
-Run backend unit and integration test suite:
-
-```bash
-mvn test
-```
-
----
-
-### 3. Running the Frontend
-
-The React frontend is served via Vite:
-
+### 2. Start the React Frontend
+In a separate terminal at repository root:
 ```bash
 npm install
 npm run dev
 ```
-
-Open the application at `http://localhost:3000` (or `http://localhost:5173`).
-
----
-
-## 📡 REST API Specifications
-
-All API endpoints are hosted exclusively by Spring Boot on port 8080:
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/health` | Backend status (Stateless AI Engine) |
-| `POST` | `/api/auth/login` | Candidate demo session token issuer |
-| `POST` | `/api/auth/register` | Local candidate profile registration |
-| `GET` | `/api/auth/me` | Current authenticated candidate profile |
-| `GET` | `/api/problems` | List curated algorithmic interview questions |
-| `GET` | `/api/problems/{id}` | Problem details, constraints, test cases, and starter code |
-| `POST` | `/api/interviews/start` | Initialize an AI coding interview session |
-| `POST` | `/api/interviews/{id}/submit` | AI evaluation of code correctness, complexity, and quality |
-| `GET` | `/api/interviews/history` | Candidate interview history |
-| `POST` | `/api/mock-interviews/start` | Start multi-round technical/behavioral mock interview |
-| `POST` | `/api/mock-interviews/{id}/answer` | Submit mock interview answer & receive AI evaluation and follow-up |
-| `GET` | `/api/analytics/overview` | Performance metrics overview |
-| `GET` | `/api/analytics/ai-insights` | Gemini personalized strategic improvement plan |
+Open `http://localhost:3000` (or `http://localhost:5173`) in your browser.
 
 ---
 
-## 🔒 Security Principles
+## 🚢 Backend Deployment Instructions
 
-- **Zero Database Exposure**: User solutions and session records stay within the candidate's browser storage.
-- **Server-Side API Key Isolation**: `GEMINI_API_KEY` is kept strictly on the Spring Boot server; never leaked to frontend client or logs.
-- **CORS Configured**: Spring Boot allows cross-origin requests from the frontend client development server.
-- **Zero Pill / Anti-Slop UI**: Clean typographical layout adhering to modern software engineering design standards.
+The backend is fully self-contained with no database prerequisites.
+
+### Option A: Cloud Run / Docker Container
+Create a container image:
+```dockerfile
+FROM eclipse-temurin:21-jdk-alpine AS builder
+WORKDIR /build
+COPY backend/pom.xml .
+COPY backend/src ./src
+RUN apk add --no-cache maven && mvn clean package -DskipTests
+
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY --from=builder /build/target/*.jar app.jar
+ENV PORT=8080
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "java -Dserver.port=${PORT} -jar app.jar"]
+```
+Deploy to Google Cloud Run:
+```bash
+gcloud run deploy codementor-backend \
+  --image gcr.io/YOUR_PROJECT/codementor-backend \
+  --platform managed \
+  --set-env-vars "GEMINI_API_KEY=your_key,CORS_ALLOWED_ORIGINS=https://your-frontend.vercel.app" \
+  --allow-unauthenticated
+```
+
+### Option B: Render / Railway / Heroku
+1. Connect repository with root directory set to `backend`.
+2. Build Command: `mvn clean package -DskipTests`
+3. Start Command: `java -Dserver.port=$PORT -jar target/codementor-api-0.0.1-SNAPSHOT.jar`
+4. Set Environment Variables: `GEMINI_API_KEY`, `CORS_ALLOWED_ORIGINS`.
+
+---
+
+## 🌐 Frontend Deployment Instructions
+
+The React frontend compiles to static assets.
+
+### Option A: Vercel / Netlify
+1. Set Framework Preset: **Vite**
+2. Build Command: `npm run build`
+3. Output Directory: `dist`
+4. Environment Variable:
+   ```env
+   VITE_API_BASE_URL=https://your-deployed-backend.run.app/api
+   ```
+5. SPA Rewrite Rule (for `vercel.json`):
+   ```json
+   {
+     "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+   }
+   ```
+
+### Option B: Reverse-Proxy Setup (Single Domain / Nginx)
+If proxying `/api` requests on the same domain:
+```nginx
+location /api/ {
+    proxy_pass http://backend-service:8080/api/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+}
+location / {
+    root /var/www/dist;
+    try_files $uri $uri/ /index.html;
+}
+```
+In this mode, omit `VITE_API_BASE_URL`, and the frontend will automatically use relative `/api`.
+
+---
+
+## 🩺 Health Check & Monitoring
+
+- **Application Health**: `GET /api/health`
+  ```json
+  {
+    "status": "UP",
+    "service": "CodeMentor AI",
+    "database": "Stateless AI Engine (Zero Database)"
+  }
+  ```
+- **Spring Actuator Health**: `GET /actuator/health`
+  ```json
+  {
+    "status": "UP"
+  }
+  ```
+
+---
+
+## ⚠️ Known Limitations & Scope
+
+1. **Local Browser Scoping**: Candidate interview sessions, code submissions, and analytics persist exclusively inside the candidate's active browser (`localStorage`). Sessions do not sync across different browsers or devices.
+2. **Demo Authentication**: The demo candidate profile (`candidate@codementor.ai`) is engineered for rapid, friction-free evaluation. It does not provide multi-tenant cryptographic user isolation.
+3. **AI Code Analysis vs. Container Sandbox**: Code submitted in the problem workspace and mock interviews is analyzed using Gemini AI for algorithmic complexity, correctness, and clean coding practices; it is not compiled or executed inside a multi-language containerized sandbox (e.g. Judge0).
+4. **External Gemini Quota**: If the Gemini API key reaches upstream rate limits or quota boundaries (HTTP 429), the backend gracefully falls back to deterministic heuristic evaluation templates to ensure uninterrupted uptime.

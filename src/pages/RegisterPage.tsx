@@ -110,6 +110,9 @@ export const RegisterPage: React.FC = () => {
             <p className="text-slate-300 text-xs leading-relaxed">
               Skip registration and jump straight into coding and mock interview prep with the default candidate demo profile.
             </p>
+            <p className="text-[11px] text-amber-400/90 leading-tight">
+              Notice: Demo profile runs locally without multi-tenant cloud storage. Not designed for multi-user production data isolation.
+            </p>
             <button
               type="button"
               onClick={handleDemoLogin}
