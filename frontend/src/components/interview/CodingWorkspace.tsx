@@ -94,14 +94,23 @@ export const CodingWorkspace: React.FC<CodingWorkspaceProps> = ({
               <h2 className="text-white font-semibold text-base sm:text-lg">
                 {interview.problemTitle}
               </h2>
-              <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${difficultyBadge}`}>
+              <span className="text-slate-600">·</span>
+              <span
+                className={`font-mono text-xs font-medium ${
+                  interview.difficulty?.toUpperCase() === 'EASY'
+                    ? 'text-emerald-400'
+                    : interview.difficulty?.toUpperCase() === 'MEDIUM'
+                    ? 'text-amber-400'
+                    : 'text-rose-400'
+                }`}
+              >
                 {interview.difficulty}
               </span>
             </div>
-            <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5">
-              <span>Topic: <strong className="text-slate-300">{interview.topic}</strong></span>
-              <span>•</span>
-              <span>Language: <strong className="text-slate-300 font-mono">{interview.language}</strong></span>
+            <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5 font-mono">
+              <span>Topic: <strong className="text-slate-300 font-normal">{interview.topic}</strong></span>
+              <span aria-hidden="true">·</span>
+              <span>Language: <strong className="text-slate-300 font-normal">{interview.language}</strong></span>
             </div>
           </div>
         </div>

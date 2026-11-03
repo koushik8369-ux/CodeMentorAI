@@ -38,19 +38,19 @@ export const InterviewResult: React.FC<InterviewResultProps> = ({
       {/* Score Hero Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-cyan-950/40 to-slate-900 border border-slate-800 rounded-2xl p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between gap-6 shadow-xl">
         <div className="space-y-2 text-center sm:text-left">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+          <div className="flex items-center gap-2 text-xs font-mono text-cyan-400 justify-center sm:justify-start">
             <Trophy className="w-3.5 h-3.5" />
-            <span>Interview Evaluation Complete</span>
+            <span>EVALUATION REPORT</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-white">
             {interview.problemTitle}
           </h1>
-          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 text-xs sm:text-sm text-slate-400">
-            <span>Topic: <strong className="text-slate-200">{interview.topic}</strong></span>
-            <span>•</span>
-            <span>Difficulty: <strong className="text-slate-200">{interview.difficulty}</strong></span>
-            <span>•</span>
-            <span>Language: <strong className="text-slate-200 font-mono">{interview.language}</strong></span>
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-xs text-slate-400 font-mono">
+            <span>Topic: <strong className="text-slate-200 font-normal">{interview.topic}</strong></span>
+            <span aria-hidden="true">·</span>
+            <span>Difficulty: <strong className="text-slate-200 font-normal">{interview.difficulty}</strong></span>
+            <span aria-hidden="true">·</span>
+            <span>Language: <strong className="text-slate-200 font-normal">{interview.language}</strong></span>
           </div>
         </div>
 

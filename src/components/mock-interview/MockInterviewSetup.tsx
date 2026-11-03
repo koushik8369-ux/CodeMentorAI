@@ -75,12 +75,12 @@ export const MockInterviewSetup: React.FC<MockInterviewSetupProps> = ({ onStart,
   };
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-10 max-w-3xl mx-auto shadow-2xl space-y-8">
+    <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 sm:p-8 max-w-3xl mx-auto shadow-xl space-y-8">
       {/* Header */}
       <div className="space-y-2 text-center sm:text-left border-b border-slate-800 pb-6">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-xs font-semibold uppercase tracking-wider">
+        <div className="flex items-center gap-2 text-xs font-mono text-cyan-400">
           <Sparkles className="w-3.5 h-3.5" />
-          <span>Interactive AI Interviewer</span>
+          <span>SIMULATION CONFIGURATION</span>
         </div>
         <h2 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
           Configure Your Mock Technical Interview

@@ -95,9 +95,9 @@ export const MockInterviewFinalReport: React.FC<MockInterviewFinalReportProps> =
 
         <div className="flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
           <div className="space-y-3 text-center md:text-left">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 text-xs font-semibold uppercase tracking-wider">
+            <div className="flex items-center gap-2 text-xs font-mono text-cyan-400">
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Hiring Committee Verdict</span>
+              <span>HIRING COMMITTEE VERDICT</span>
             </div>
             <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
               Mock Interview Final Report

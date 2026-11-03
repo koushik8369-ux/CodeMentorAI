@@ -1,8 +1,20 @@
 import React from 'react';
 import { User, Mail, Award, Target, Briefcase, Calendar, ShieldCheck } from 'lucide-react';
 import { DashboardLayout } from '../layouts/DashboardLayout';
+import { useAuth } from '../context/AuthContext';
 
 export const ProfilePage: React.FC = () => {
+  const { user } = useAuth();
+
+  const displayName = user?.name || 'Candidate Demo';
+  const displayEmail = user?.email || 'candidate@codementor.ai';
+  const initials = displayName
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
   return (
     <DashboardLayout>
       <div className="max-w-4xl mx-auto space-y-8">
@@ -15,21 +27,21 @@ export const ProfilePage: React.FC = () => {
             Candidate Profile
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 mt-1">
-            Manage your interview goals, preferred languages, and credentials.
+            Manage your interview goals, preferred languages, and profile preferences.
           </p>
         </div>
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-6 space-y-6">
           <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-full bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white text-2xl font-bold">
-              AM
+            <div className="h-16 w-16 rounded-md bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 text-xl font-bold">
+              {initials}
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Alex Mercer</h2>
-              <p className="text-xs text-slate-400 font-mono">alex.mercer.swe@example.com</p>
+              <h2 className="text-lg font-bold text-white">{displayName}</h2>
+              <p className="text-xs text-slate-400 font-mono">{displayEmail}</p>
               <div className="flex items-center gap-2 text-xs font-mono text-emerald-400 mt-1">
                 <ShieldCheck className="h-3.5 w-3.5" />
-                <span>Verified Candidate · Active Preparation</span>
+                <span>Local Candidate Profile · Zero Database Mode</span>
               </div>
             </div>
           </div>

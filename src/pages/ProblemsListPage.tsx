@@ -48,7 +48,7 @@ export const ProblemsListPage: React.FC = () => {
           <div>
             <div className="flex items-center gap-2 text-xs font-mono text-indigo-400 mb-1">
               <BookOpen className="h-4 w-4" />
-              <span>CURATED CODING REPOSITORY</span>
+              <span>CURATED PROBLEM CATALOG</span>
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Problem Bank

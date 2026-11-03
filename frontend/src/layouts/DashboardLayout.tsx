@@ -19,6 +19,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { api, HealthStatus } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -27,6 +28,7 @@ interface DashboardLayoutProps {
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [health, setHealth] = useState<HealthStatus | null>(null);
+  const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -49,6 +51,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   ];
 
   const handleLogout = () => {
+    logout();
     navigate('/');
   };
 
@@ -103,20 +106,25 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             </Link>
           </div>
 
-          {/* User info mini-card */}
-          <div className="p-3 rounded-lg bg-slate-900/80 border border-slate-800">
+          {/* Candidate profile card */}
+          <div className="p-3 rounded-lg bg-slate-900/70 border border-slate-850">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-full bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center text-white font-bold text-sm shadow-sm">
-                CM
+              <div className="h-9 w-9 rounded-md bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 font-semibold text-xs">
+                {(user?.name || 'Candidate Demo')
+                  .split(' ')
+                  .map((n) => n[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-white truncate">Alex Mercer</p>
-                <p className="text-[11px] text-slate-400 font-mono truncate">Candidate · L5 SWE</p>
+                <p className="text-xs font-semibold text-white truncate">{user?.name || 'Candidate Demo'}</p>
+                <p className="text-[11px] text-slate-400 font-mono truncate">{user?.email || 'candidate@codementor.ai'}</p>
               </div>
             </div>
-            <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-400 font-mono">
-              <span>Target: Google / Meta</span>
-              <span className="text-indigo-400">Java & Go</span>
+            <div className="mt-2 pt-2 border-t border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400 font-mono">
+              <span>Profile: Demo</span>
+              <span className="text-emerald-400 font-medium">Zero-DB Active</span>
             </div>
           </div>
 
