@@ -6,6 +6,19 @@ CodeMentor AI empowers software engineers to conquer technical interviews throug
 
 ---
 
+## 📸 Screenshots & Product Walkthrough
+
+*(Screenshots will be captured and linked here following initial public production deployment)*
+
+| View | Description |
+|---|---|
+| **Candidate Dashboard** | Real-time interview metrics, recent history, readiness score, and quick track actions |
+| **Coding Workspace** | Split-pane problem specifications, multi-language editor, and Gemini AI feedback |
+| **Mock Interview** | Multi-round technical & behavioral simulations with adaptive follow-up challenges |
+| **Performance Analytics** | Zero-DB local performance trends, topic breakdowns, and difficulty distributions |
+
+---
+
 ## 🏗 Architecture (Database-Free / Stateless Backend)
 
 ```
@@ -14,7 +27,8 @@ CodeMentor AI empowers software engineers to conquer technical interviews throug
 │                                                        │
 │  - Browser localStorage (Interviews, Mocks, Analytics) │
 │  - 1-Click Candidate Demo Profile Mode                 │
-│  - Real-time Monaco-style Code Workspace               │
+│  - Split-pane Coding Workspace (Java/Python/TS)        │
+│  - SPA Routing with Fallback (/index.html)             │
 └───────────────────────────┬────────────────────────────┘
                             │ REST API (JSON / Bearer Token)
                             ▼
@@ -24,6 +38,7 @@ CodeMentor AI empowers software engineers to conquer technical interviews throug
 │  - Stateless AI Orchestration & Evaluation Engine      │
 │  - Zero Database Dependency (No PostgreSQL/JPA needed) │
 │  - Protected Gemini API Gateway (Header-Based Auth)    │
+│  - Dynamic Port Binding & Container Health Check       │
 └───────────────────────────┬────────────────────────────┘
                             │ HTTPS (Server-Side Only)
                             ▼
@@ -34,7 +49,7 @@ CodeMentor AI empowers software engineers to conquer technical interviews throug
 ```
 
 The system operates with a **stateless, zero-database architecture**:
-- **Backend**: Java 21 + Spring Boot running statelessly on `${PORT:-8080}`. Performs AI orchestration, question generation, and solution grading via Gemini. No database connection is required or attempted.
+- **Backend**: Java 21 + Spring Boot running statelessly on `${PORT:-8080}`. Performs AI orchestration, problem generation, and solution grading via Gemini. No database connection is required or attempted.
 - **Frontend**: React 19 + Vite + TypeScript. Persists coding interview attempts, multi-round mock transcripts, and performance analytics locally in the candidate's browser storage.
 
 ---
@@ -46,6 +61,7 @@ The system operates with a **stateless, zero-database architecture**:
 - **Backend**: Java 21, Spring Boot 3.3.4, Spring Web, Spring Security, Bean Validation, JJWT
 - **Persistence**: Database-Free (Zero PostgreSQL, MySQL, MongoDB, or external database requirement)
 - **AI Integration**: Google Gemini API (`gemini-3.8-flash`), isolated exclusively to the Spring Boot server with deterministic heuristic fallbacks
+- **Deployment Packaging**: Multi-stage `Dockerfile` (Java 21 JRE), `vercel.json`, `netlify.toml`, `public/_redirects`
 
 ---
 
@@ -81,14 +97,14 @@ The system operates with a **stateless, zero-database architecture**:
 | `GEMINI_API_KEY` | Recommended | Empty (fallback heuristics used) | Google Gemini API key; isolated strictly on server-side |
 | `GEMINI_MODEL` | Optional | `gemini-3.8-flash` | Gemini model identifier |
 | `JWT_SECRET` | Optional | 512-bit built-in seed | Secret key for JWT signing (fails safely to secure seed if too short) |
-| `CORS_ALLOWED_ORIGINS` | Optional | `http://localhost:5173,http://localhost:3000` | Comma-separated list of allowed frontend origins |
+| `CORS_ALLOWED_ORIGINS` | Optional | `http://localhost:5173,http://localhost:3000` | Comma-separated list of allowed frontend origins (e.g. `https://your-frontend.vercel.app`) |
 | `APP_URL` | Optional | `http://localhost:5173` | Primary frontend application URL |
 
 ### Frontend Build-Time Environment Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `VITE_API_BASE_URL` | Optional | `http://localhost:8080/api` (dev) or `/api` (prod) | Base URL of the Spring Boot REST backend |
+| `VITE_API_BASE_URL` | Optional | `http://localhost:8080/api` (dev) or `/api` (prod) | Base URL of the Spring Boot REST backend (e.g. `https://your-backend.railway.app/api`) |
 
 ---
 
@@ -138,35 +154,36 @@ Open `http://localhost:3000` (or `http://localhost:5173`) in your browser.
 The backend is fully self-contained with no database prerequisites.
 
 ### Option A: Cloud Run / Docker Container
-Create a container image:
-```dockerfile
-FROM eclipse-temurin:21-jdk-alpine AS builder
-WORKDIR /build
-COPY backend/pom.xml .
-COPY backend/src ./src
-RUN apk add --no-cache maven && mvn clean package -DskipTests
+A production multi-stage `backend/Dockerfile` is included:
+```bash
+# Build the Docker image from backend directory
+cd backend
+docker build -t codementor-backend .
 
-FROM eclipse-temurin:21-jre-alpine
-WORKDIR /app
-COPY --from=builder /build/target/*.jar app.jar
-ENV PORT=8080
-EXPOSE 8080
-ENTRYPOINT ["sh", "-c", "java -Dserver.port=${PORT} -jar app.jar"]
+# Run locally to test
+docker run -p 8080:8080 \
+  -e GEMINI_API_KEY="your_gemini_key" \
+  -e CORS_ALLOWED_ORIGINS="https://your-frontend.vercel.app" \
+  codementor-backend
 ```
+
 Deploy to Google Cloud Run:
 ```bash
 gcloud run deploy codementor-backend \
-  --image gcr.io/YOUR_PROJECT/codementor-backend \
+  --source ./backend \
   --platform managed \
+  --region us-central1 \
   --set-env-vars "GEMINI_API_KEY=your_key,CORS_ALLOWED_ORIGINS=https://your-frontend.vercel.app" \
   --allow-unauthenticated
 ```
 
-### Option B: Render / Railway / Heroku
-1. Connect repository with root directory set to `backend`.
+### Option B: Railway / Render / Heroku
+1. Connect Git repository with root directory set to `backend`.
 2. Build Command: `mvn clean package -DskipTests`
 3. Start Command: `java -Dserver.port=$PORT -jar target/codementor-api-0.0.1-SNAPSHOT.jar`
-4. Set Environment Variables: `GEMINI_API_KEY`, `CORS_ALLOWED_ORIGINS`.
+4. Environment Variables:
+   - `GEMINI_API_KEY`: Your Google AI Studio API key
+   - `CORS_ALLOWED_ORIGINS`: Your deployed frontend origin (e.g. `https://codementor.vercel.app`)
 
 ---
 
@@ -174,22 +191,28 @@ gcloud run deploy codementor-backend \
 
 The React frontend compiles to static assets.
 
-### Option A: Vercel / Netlify
-1. Set Framework Preset: **Vite**
-2. Build Command: `npm run build`
-3. Output Directory: `dist`
-4. Environment Variable:
+### Option A: Vercel
+1. Import repository into Vercel.
+2. Framework Preset: **Vite**
+3. Build Command: `npm run build`
+4. Output Directory: `dist`
+5. Environment Variables:
    ```env
-   VITE_API_BASE_URL=https://your-deployed-backend.run.app/api
+   VITE_API_BASE_URL=https://your-backend.railway.app/api
    ```
-5. SPA Rewrite Rule (for `vercel.json`):
-   ```json
-   {
-     "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
-   }
-   ```
+   *(The included `vercel.json` automatically manages client-side SPA routing rewrites).*
 
-### Option B: Reverse-Proxy Setup (Single Domain / Nginx)
+### Option B: Netlify
+1. Import repository into Netlify.
+2. Build Command: `npm run build`
+3. Publish Directory: `dist`
+4. Environment Variables:
+   ```env
+   VITE_API_BASE_URL=https://your-backend.railway.app/api
+   ```
+   *(The included `netlify.toml` and `public/_redirects` automatically route `/*` to `/index.html` with status 200).*
+
+### Option C: Reverse-Proxy Setup (Single Domain / Nginx)
 If proxying `/api` requests on the same domain:
 ```nginx
 location /api/ {
