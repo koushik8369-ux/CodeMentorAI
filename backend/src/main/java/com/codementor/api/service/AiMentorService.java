@@ -42,36 +42,81 @@ public class AiMentorService {
                 ? request.getLearningContext().trim()
                 : "Full-Stack Software Engineering";
 
+        String lastErrorNotice = null;
         if (openRouterConfig.isApiKeyConfigured()) {
             try {
                 String aiText = callOpenRouterApi(request, model, lang, context);
                 if (aiText != null && !aiText.isBlank()) {
                     return new AiMentorResponse(aiText, model, "SUCCESS", lang, context, null);
                 }
+            } catch (OpenRouterApiException e) {
+                lastErrorNotice = "Upstream OpenRouter error (HTTP " + e.getStatusCode() + ": " + e.getResponseSummary() + "). Heuristic mentor response provided.";
+                logger.warn("OpenRouter API error (HTTP {}): {}. Falling back to heuristic mentor response.", e.getStatusCode(), e.getResponseSummary());
             } catch (Exception e) {
-                // Log generic message without leaking keys, tokens, or sensitive context
-                logger.warn("OpenRouter API call encountered an error: {}. Falling back to heuristic mentor response.", e.getMessage());
+                String safeMsg = redactSecrets(e.getMessage());
+                lastErrorNotice = "OpenRouter API call failed (" + safeMsg + "). Heuristic mentor response provided.";
+                logger.warn("OpenRouter API call encountered an error: {}. Falling back to heuristic mentor response.", safeMsg);
             }
         }
 
         // Graceful fallback response when OPENROUTER_API_KEY is not configured or upstream fails
         String fallbackAnswer = generateFallbackMentorResponse(request.getMessage(), lang, context);
-        String notice = openRouterConfig.isApiKeyConfigured()
-                ? "OpenRouter API response unavailable (upstream timeout or quota). Heuristic mentor response provided."
-                : "OpenRouter API key not detected in backend environment. To enable live LLM generation, set OPENROUTER_API_KEY in Render environment variables.";
+        String notice = lastErrorNotice != null
+                ? lastErrorNotice
+                : (openRouterConfig.isApiKeyConfigured()
+                    ? "OpenRouter API response unavailable. Heuristic mentor response provided."
+                    : "OpenRouter API key not detected in backend environment. To enable live LLM generation, set OPENROUTER_API_KEY in Render environment variables.");
 
         return new AiMentorResponse(fallbackAnswer, model + " (Fallback Heuristic)", "FALLBACK", lang, context, notice);
     }
 
     public String resolveModel(String customOverride) {
         if (customOverride != null && !customOverride.isBlank()) {
-            return customOverride.trim();
+            String trimmed = customOverride.trim();
+            if (!"default".equalsIgnoreCase(trimmed) && !"auto".equalsIgnoreCase(trimmed)) {
+                return trimmed;
+            }
         }
         return openRouterConfig.getDefaultModel();
     }
 
     public boolean isConfigured() {
         return openRouterConfig.isApiKeyConfigured();
+    }
+
+    public String redactSecrets(String text) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        String sanitized = text;
+        String apiKey = openRouterConfig.getApiKey();
+        if (apiKey != null && !apiKey.isBlank()) {
+            sanitized = sanitized.replace(apiKey, "[REDACTED_API_KEY]");
+        }
+        sanitized = sanitized.replaceAll("(?i)Bearer\\s+[a-zA-Z0-9_\\-\\.]+", "Bearer [REDACTED]");
+        sanitized = sanitized.replaceAll("sk-or-v1-[a-zA-Z0-9]+", "sk-or-v1-[REDACTED]");
+        sanitized = sanitized.replaceAll("(?i)key=[a-zA-Z0-9_\\-]+", "key=[REDACTED]");
+        return sanitized;
+    }
+
+    private String extractErrorMessage(String rawBody, int statusCode) {
+        if (rawBody == null || rawBody.isBlank()) {
+            return "No response body returned from upstream";
+        }
+        try {
+            JsonNode root = objectMapper.readTree(rawBody);
+            JsonNode errorNode = root.path("error");
+            if (!errorNode.isMissingNode()) {
+                String msg = errorNode.path("message").asText();
+                if (msg != null && !msg.isBlank()) {
+                    return redactSecrets(msg);
+                }
+            }
+        } catch (Exception ignored) {
+            // Not valid JSON
+        }
+        String truncated = rawBody.length() > 200 ? rawBody.substring(0, 200) + "..." : rawBody;
+        return redactSecrets(truncated);
     }
 
     private String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
@@ -117,7 +162,11 @@ public class AiMentorService {
         HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 
         if (response.statusCode() != 200) {
-            throw new RuntimeException("OpenRouter returned HTTP " + response.statusCode());
+            String rawBody = response.body() != null ? response.body() : "";
+            String safeBody = redactSecrets(rawBody);
+            logger.warn("OpenRouter API returned HTTP {}: {}", response.statusCode(), safeBody);
+            String errorSummary = extractErrorMessage(rawBody, response.statusCode());
+            throw new OpenRouterApiException(response.statusCode(), errorSummary);
         }
 
         JsonNode rootNode = objectMapper.readTree(response.body());
@@ -128,6 +177,25 @@ public class AiMentorService {
         }
 
         return contentNode.asText().trim();
+    }
+
+    public static class OpenRouterApiException extends RuntimeException {
+        private final int statusCode;
+        private final String responseSummary;
+
+        public OpenRouterApiException(int statusCode, String responseSummary) {
+            super("OpenRouter returned HTTP " + statusCode + ": " + responseSummary);
+            this.statusCode = statusCode;
+            this.responseSummary = responseSummary;
+        }
+
+        public int getStatusCode() {
+            return statusCode;
+        }
+
+        public String getResponseSummary() {
+            return responseSummary;
+        }
     }
 
     private String buildSystemPrompt(String language, String learningContext) {

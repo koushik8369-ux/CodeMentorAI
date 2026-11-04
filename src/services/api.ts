@@ -449,7 +449,7 @@ export const api = {
       return {
         service: 'CodeMentor AI Programming Mentor Agent',
         provider: 'OpenRouter API',
-        defaultModel: 'anthropic/claude-3.5-sonnet',
+        defaultModel: 'tencent/hy4',
         isConfigured: false,
         status: 'UP',
       };

@@ -63,11 +63,12 @@ const QUICK_TOPICS = [
 ];
 
 const AVAILABLE_MODELS = [
-  { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet (Recommended)' },
+  { id: 'tencent/hy4', label: 'Tencent Hy4 (Active Default)' },
+  { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
   { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
   { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B Instruct' },
-  { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
   { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
+  { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
 ];
 
 export const MentorPage: React.FC = () => {
@@ -101,7 +102,8 @@ Choose a quick starter topic above or type any coding question or snippet below!
   const [inputMessage, setInputMessage] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('Java');
   const [selectedContext, setSelectedContext] = useState('Full-Stack Software Engineering');
-  const [selectedModel, setSelectedModel] = useState('anthropic/claude-3.5-sonnet');
+  const [selectedModel, setSelectedModel] = useState('tencent/hy4');
+  const [hasUserManuallySelectedModel, setHasUserManuallySelectedModel] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [backendConfig, setBackendConfig] = useState<{
@@ -120,14 +122,14 @@ Choose a quick starter topic above or type any coding question or snippet below!
           isConfigured: status.isConfigured,
           provider: status.provider,
         });
-        if (status.defaultModel) {
+        if (status.defaultModel && !hasUserManuallySelectedModel) {
           setSelectedModel(status.defaultModel);
         }
       })
       .catch(() => {
         // Safe default
       });
-  }, []);
+  }, [hasUserManuallySelectedModel]);
 
   useEffect(() => {
     localStorageService.saveMentorChat(messages);
@@ -158,12 +160,18 @@ Choose a quick starter topic above or type any coding question or snippet below!
         .slice(-8)
         .map((m) => ({ role: m.role, content: m.content }));
 
+      // Only send customModel if the user explicitly changed the model to something
+      // other than the authoritative backend default
+      const customOverride = hasUserManuallySelectedModel && selectedModel !== backendConfig?.defaultModel
+        ? selectedModel
+        : undefined;
+
       const res = await api.chatWithMentor({
         message: text,
         conversationHistory: historyPayload,
         programmingLanguage: selectedLanguage,
         learningContext: selectedContext,
-        customModel: selectedModel,
+        customModel: customOverride,
       });
 
       const assistantMsg: AiMentorMessage = {
@@ -361,12 +369,21 @@ Choose a quick starter topic above or type any coding question or snippet below!
               <Cpu className="w-3.5 h-3.5 text-slate-400" />
               <select
                 value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
+                onChange={(e) => {
+                  setSelectedModel(e.target.value);
+                  setHasUserManuallySelectedModel(true);
+                }}
                 className="bg-transparent text-slate-200 text-xs focus:outline-none cursor-pointer"
               >
+                {backendConfig?.defaultModel &&
+                  !AVAILABLE_MODELS.some((m) => m.id === backendConfig.defaultModel) && (
+                    <option value={backendConfig.defaultModel} className="bg-slate-900 text-white">
+                      {backendConfig.defaultModel} (Server Default)
+                    </option>
+                  )}
                 {AVAILABLE_MODELS.map((m) => (
                   <option key={m.id} value={m.id} className="bg-slate-900 text-white">
-                    {m.label}
+                    {m.id === backendConfig?.defaultModel ? `${m.label} (Server Default)` : m.label}
                   </option>
                 ))}
               </select>

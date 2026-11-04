@@ -9,7 +9,7 @@ public class OpenRouterConfig {
     @Value("${openrouter.api.key:}")
     private String apiKey;
 
-    @Value("${openrouter.api.model:anthropic/claude-3.5-sonnet}")
+    @Value("${openrouter.api.model:tencent/hy4}")
     private String defaultModel;
 
     @Value("${openrouter.api.url:https://openrouter.ai/api/v1/chat/completions}")
@@ -26,7 +26,7 @@ public class OpenRouterConfig {
     public String getDefaultModel() {
         return defaultModel != null && !defaultModel.trim().isBlank()
                 ? defaultModel.trim()
-                : "anthropic/claude-3.5-sonnet";
+                : "tencent/hy4";
     }
 
     public String getApiUrl() {

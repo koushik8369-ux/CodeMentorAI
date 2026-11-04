@@ -33,6 +33,12 @@ public class AiMentorTests {
     @Autowired
     private JwtService jwtService;
 
+    @Autowired
+    private com.codementor.api.service.AiMentorService aiMentorService;
+
+    @Autowired
+    private com.codementor.api.config.OpenRouterConfig openRouterConfig;
+
     @Test
     @DisplayName("GET /api/health returns HTTP 200 with UP status")
     void testGetHealthReturns200() throws Exception {
@@ -150,5 +156,49 @@ public class AiMentorTests {
     void testProtectedEndpointsRemainProtected() throws Exception {
         mockMvc.perform(get("/api/interviews"))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("Model resolution: backend default is authoritative when customModel is null, blank, or 'default'")
+    void testResolveModelAuthoritativeBackendDefault() {
+        String defaultModel = openRouterConfig.getDefaultModel();
+        org.junit.jupiter.api.Assertions.assertEquals(defaultModel, aiMentorService.resolveModel(null));
+        org.junit.jupiter.api.Assertions.assertEquals(defaultModel, aiMentorService.resolveModel(""));
+        org.junit.jupiter.api.Assertions.assertEquals(defaultModel, aiMentorService.resolveModel("   "));
+        org.junit.jupiter.api.Assertions.assertEquals(defaultModel, aiMentorService.resolveModel("default"));
+        org.junit.jupiter.api.Assertions.assertEquals(defaultModel, aiMentorService.resolveModel("auto"));
+
+        // Explicit custom override is honored
+        org.junit.jupiter.api.Assertions.assertEquals("meta-llama/llama-3.3-70b-instruct",
+                aiMentorService.resolveModel("meta-llama/llama-3.3-70b-instruct"));
+    }
+
+    @Test
+    @DisplayName("Secret redaction: API keys and Bearer tokens are scrubbed from log/error strings")
+    void testSecretRedaction() {
+        String testInput = "Failed calling with Authorization: Bearer sk-or-v1-abc123secret and key=secret123";
+        String redacted = aiMentorService.redactSecrets(testInput);
+        org.junit.jupiter.api.Assertions.assertFalse(redacted.contains("sk-or-v1-abc123secret"));
+        org.junit.jupiter.api.Assertions.assertFalse(redacted.contains("secret123"));
+        org.junit.jupiter.api.Assertions.assertTrue(redacted.contains("[REDACTED]"));
+    }
+
+    @Test
+    @DisplayName("POST /api/mentor/chat with invalid customModel falls back gracefully with diagnostic notice")
+    void testChatFallbackWithDiagnosticNotice() throws Exception {
+        AiMentorRequest request = new AiMentorRequest(
+                "Explain Java memory model",
+                List.of(),
+                "Java",
+                "Concurrency"
+        );
+        request.setCustomModel("invalid/nonexistent-model-404");
+
+        mockMvc.perform(post("/api/mentor/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status", anyOf(is("SUCCESS"), is("FALLBACK"))))
+                .andExpect(jsonPath("$.selectedModel", containsString("invalid/nonexistent-model-404")));
     }
 }
