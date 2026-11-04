@@ -17,6 +17,7 @@ import {
   CheckCircle2,
   ChevronRight,
   Sparkles,
+  Bot,
 } from 'lucide-react';
 import { api, HealthStatus } from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -40,9 +41,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-    { name: 'Practice', path: '/problem/two-sum', icon: Code2 },
-    { name: 'Coding Interviews', path: '/interview-setup', icon: CalendarCheck },
+    { name: 'AI Programming Mentor', path: '/mentor', icon: Bot },
     { name: 'AI Mock Interview', path: '/mock-interview', icon: Sparkles },
+    { name: 'Coding Interviews', path: '/interview-setup', icon: CalendarCheck },
+    { name: 'Practice', path: '/problem/two-sum', icon: Code2 },
     { name: 'Problems', path: '/problems', icon: BookOpen },
     { name: 'Analytics', path: '/analytics', icon: BarChart3 },
     { name: 'Learning Plan', path: '/learning-plan', icon: GraduationCap },

@@ -14,6 +14,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { MockInterviewPage } from './pages/MockInterviewPage';
+import { MentorPage } from './pages/MentorPage';
 
 export default function App() {
   return (
@@ -60,6 +61,14 @@ export default function App() {
             element={
               <ProtectedRoute>
                 <MockInterviewPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/mentor"
+            element={
+              <ProtectedRoute>
+                <MentorPage />
               </ProtectedRoute>
             }
           />

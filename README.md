@@ -84,6 +84,11 @@ The system operates with a **stateless, zero-database architecture**:
 5. **Local Candidate Demo Profile**:
    - Instant 1-click access (`candidate@codementor.ai`) without registration friction.
    - Clear disclosures regarding local client scoping.
+6. **OpenRouter AI Programming Mentor Agent**:
+   - Interactive conversational mentor covering Java, OOP, DSA, React/TypeScript, Spring Boot, SQL, and System Design.
+   - Integrates with OpenRouter API (`anthropic/claude-3.5-sonnet` by default, fully configurable via `OPENROUTER_MODEL`).
+   - Structured 6-step pedagogy: Understand & Clarify &rarr; Concept &rarr; Practical Code Example &rarr; Step-by-Step Walkthrough &rarr; Common Pitfalls &rarr; Optimization & Next Steps.
+   - Zero-DB conversation persistence in browser `localStorage` with Markdown export.
 
 ---
 
@@ -94,8 +99,10 @@ The system operates with a **stateless, zero-database architecture**:
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `PORT` | Optional | `8080` | Port for Spring Boot HTTP server (provided automatically by Cloud Run, Render, Railway, Heroku) |
-| `GEMINI_API_KEY` | Recommended | Empty (fallback heuristics used) | Google Gemini API key; isolated strictly on server-side |
+| `GEMINI_API_KEY` | Recommended | Empty (fallback heuristics used) | Google Gemini API key for coding problems & mock interviews; isolated strictly on server-side |
 | `GEMINI_MODEL` | Optional | `gemini-3.8-flash` | Gemini model identifier |
+| `OPENROUTER_API_KEY` | Recommended | Empty (fallback heuristics used) | OpenRouter API key for the AI Programming Mentor agent; isolated strictly on server-side |
+| `OPENROUTER_MODEL` | Optional | `anthropic/claude-3.5-sonnet` | Model identifier for OpenRouter (e.g. `google/gemini-2.0-flash-001`, `meta-llama/llama-3.3-70b-instruct`) |
 | `JWT_SECRET` | Optional | 512-bit built-in seed | Secret key for JWT signing (fails safely to secure seed if too short) |
 | `CORS_ALLOWED_ORIGINS` | Optional | `http://localhost:5173,http://localhost:3000` | Comma-separated list of allowed frontend origins (e.g. `https://your-frontend.vercel.app`) |
 | `APP_URL` | Optional | `http://localhost:5173` | Primary frontend application URL |
@@ -243,6 +250,25 @@ In this mode, omit `VITE_API_BASE_URL`, and the frontend will automatically use 
   ```json
   {
     "status": "UP"
+  }
+  ```
+- **OpenRouter AI Mentor Status**: `GET /api/mentor/status`
+  ```json
+  {
+    "service": "CodeMentor AI Programming Mentor Agent",
+    "provider": "OpenRouter API",
+    "defaultModel": "anthropic/claude-3.5-sonnet",
+    "isConfigured": true,
+    "status": "UP"
+  }
+  ```
+- **AI Mentor Chat**: `POST /api/mentor/chat`
+  ```json
+  {
+    "message": "Explain B-Tree indexing in SQL with code examples",
+    "conversationHistory": [],
+    "programmingLanguage": "SQL",
+    "learningContext": "Database Concepts"
   }
   ```
 

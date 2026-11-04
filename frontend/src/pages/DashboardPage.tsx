@@ -15,6 +15,7 @@ import {
   Zap,
   BarChart3,
   Layers,
+  Bot,
 } from 'lucide-react';
 import { DashboardLayout } from '../layouts/DashboardLayout';
 import { api, HealthStatus } from '../services/api';
@@ -49,6 +50,14 @@ export const DashboardPage: React.FC = () => {
   const hasHistory = completedCount > 0 || mockInterviews.length > 0;
 
   const quickTracks = [
+    {
+      title: 'AI Programming Mentor',
+      description: 'Conversational OpenRouter mentor for Java, OOP, DSA, Spring Boot, React, and SQL.',
+      icon: Bot,
+      href: '/mentor',
+      actionText: 'Ask Mentor',
+      accent: 'border-violet-500/30 hover:border-violet-500/60 text-violet-400',
+    },
     {
       title: 'Curated Coding Problems',
       description: '500+ LeetCode-style algorithms with interactive workspace & starter code.',
@@ -125,17 +134,24 @@ export const DashboardPage: React.FC = () => {
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              to="/mentor"
+              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors shadow-xs"
+            >
+              <Bot className="h-4 w-4" />
+              <span>AI Mentor</span>
+            </Link>
             <Link
               to="/interview-setup"
-              className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500 transition-colors shadow-xs"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-750 bg-slate-850 px-3.5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-750 hover:text-white transition-colors"
             >
               <Code2 className="h-4 w-4" />
               <span>Coding Interview</span>
             </Link>
             <Link
               to="/mock-interview"
-              className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-4 py-2 text-xs font-semibold text-white hover:bg-cyan-500 transition-colors shadow-xs"
+              className="inline-flex items-center gap-2 rounded-lg bg-cyan-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-cyan-500 transition-colors shadow-xs"
             >
               <Sparkles className="h-4 w-4" />
               <span>Mock Interview</span>
@@ -212,7 +228,7 @@ export const DashboardPage: React.FC = () => {
         {/* Quick Launch Tracks */}
         <div className="space-y-3">
           <h2 className="text-sm font-semibold text-white">Interview Preparation Tracks</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {quickTracks.map((track) => {
               const Icon = track.icon;
               return (

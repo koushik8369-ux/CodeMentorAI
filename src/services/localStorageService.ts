@@ -6,12 +6,14 @@ import {
   DifficultyAnalytics,
   LanguageAnalytics,
   PerformanceTrend,
+  AiMentorMessage,
 } from '../types';
 
 const STORAGE_VERSION = 'v1';
 const CODING_INTERVIEWS_KEY = `codementor_${STORAGE_VERSION}_interviews`;
 const MOCK_INTERVIEWS_KEY = `codementor_${STORAGE_VERSION}_mock_interviews`;
 const PREFERENCES_KEY = `codementor_${STORAGE_VERSION}_preferences`;
+const MENTOR_CHAT_KEY = `codementor_${STORAGE_VERSION}_mentor_chat`;
 
 export interface UserPreferences {
   preferredLanguage?: string;
@@ -290,5 +292,25 @@ export const localStorageService = {
         };
       })
       .reverse(); // Chronological (oldest to newest)
+  },
+
+  // AI Programming Mentor Chat History
+  getMentorChat(): AiMentorMessage[] {
+    return safeGetItem<AiMentorMessage[]>(MENTOR_CHAT_KEY, []);
+  },
+
+  saveMentorChat(messages: AiMentorMessage[]): void {
+    // Preserve at most the latest 50 messages to prevent excessive localStorage usage
+    const capped = messages.slice(-50);
+    safeSetItem(MENTOR_CHAT_KEY, capped);
+  },
+
+  clearMentorChat(): void {
+    if (!isStorageAvailable()) return;
+    try {
+      window.localStorage.removeItem(MENTOR_CHAT_KEY);
+    } catch {
+      // ignore
+    }
   },
 };

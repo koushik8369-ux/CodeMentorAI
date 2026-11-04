@@ -19,6 +19,8 @@ import {
   StartMockInterviewPayload,
   SubmitMockAnswerPayload,
   MockInterview,
+  AiMentorRequestPayload,
+  AiMentorResponsePayload,
 } from '../types';
 import { localStorageService } from './localStorageService';
 
@@ -420,5 +422,37 @@ export const api = {
       throw new Error(errBody.message || 'Failed to generate question via Spring Boot Gemini Service');
     }
     return await res.json();
+  },
+
+  async chatWithMentor(payload: AiMentorRequestPayload): Promise<AiMentorResponsePayload> {
+    const res = await fetch(`${API_BASE}/mentor/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...((getAuthHeaders() as Record<string, string>) || {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.message || `AI Mentor request failed (HTTP ${res.status})`);
+    }
+    return await res.json();
+  },
+
+  async getMentorStatus(): Promise<{ service: string; provider: string; defaultModel: string; isConfigured: boolean; status: string }> {
+    try {
+      const res = await fetch(`${API_BASE}/mentor/status`);
+      if (!res.ok) throw new Error('Status error');
+      return await res.json();
+    } catch {
+      return {
+        service: 'CodeMentor AI Programming Mentor Agent',
+        provider: 'OpenRouter API',
+        defaultModel: 'anthropic/claude-3.5-sonnet',
+        isConfigured: false,
+        status: 'UP',
+      };
+    }
   },
 };

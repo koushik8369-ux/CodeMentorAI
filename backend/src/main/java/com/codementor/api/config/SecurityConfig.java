@@ -1,5 +1,6 @@
 package com.codementor.api.config;
 
+import jakarta.servlet.DispatcherType;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,7 +27,7 @@ import java.util.List;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    @Value("${app.cors.allowed-origins:http://localhost:5173}")
+    @Value("${app.cors.allowed-origins:https://code-mentor-ai-hkrx.vercel.app,http://localhost:5173,http://localhost:3000}")
     private String allowedOrigins;
 
     private final JwtAuthenticationFilter jwtAuthFilter;
@@ -47,12 +48,17 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // Permit internal forward, error, and async dispatches in Spring Boot 3
+                        .dispatcherTypeMatchers(DispatcherType.FORWARD, DispatcherType.ERROR, DispatcherType.ASYNC).permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/health").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/problems/**").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/ai/**").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
+                        // Public access to OpenRouter AI Mentor endpoints (both root and all subpaths)
+                        .requestMatchers("/api/mentor", "/api/mentor/**").permitAll()
+                        .requestMatchers("/actuator/**", "/error").permitAll()
+                        // Protected candidate workspace endpoints requiring JWT token
                         .requestMatchers("/api/interviews/**", "/api/analytics/**", "/api/mock-interviews/**").authenticated()
                         .anyRequest().authenticated()
                 )
@@ -64,8 +70,13 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
-        List<String> origins = new ArrayList<>(Arrays.asList("http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"));
-        
+        List<String> origins = new ArrayList<>(Arrays.asList(
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:3000",
+                "https://code-mentor-ai-hkrx.vercel.app"
+        ));
+
         if (allowedOrigins != null && !allowedOrigins.isBlank()) {
             String[] splitOrigins = allowedOrigins.split(",");
             for (String origin : splitOrigins) {
@@ -76,14 +87,16 @@ public class SecurityConfig {
             }
         }
 
-        if (origins.contains("*")) {
-            config.setAllowedOriginPatterns(List.of("*"));
-        } else {
-            config.setAllowedOrigins(origins);
-        }
+        // Support origin patterns for local development only (dynamic Vite / dev server ports)
+        // Broad wildcard patterns (*.vercel.app, *.onrender.com) are strictly excluded for production security
+        config.setAllowedOriginPatterns(Arrays.asList(
+                "http://localhost:*",
+                "http://127.0.0.1:*"
+        ));
 
+        config.setAllowedOrigins(origins);
         config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
-        config.setAllowedHeaders(Arrays.asList("Authorization", "Content-Type", "Accept", "X-Requested-With", "Origin"));
+        config.setAllowedHeaders(Arrays.asList("*"));
         config.setExposedHeaders(List.of("Authorization"));
         config.setAllowCredentials(true);
         config.setMaxAge(3600L);

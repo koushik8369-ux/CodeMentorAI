@@ -271,3 +271,33 @@ export interface MockInterview {
   currentQuestion?: MockInterviewQuestion;
   questions?: MockInterviewQuestion[];
 }
+
+export interface AiMentorMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: string;
+  model?: string;
+  status?: 'SUCCESS' | 'FALLBACK' | 'ERROR';
+  language?: string;
+  context?: string;
+}
+
+export interface AiMentorRequestPayload {
+  message: string;
+  conversationHistory?: Array<{ role: string; content: string }>;
+  programmingLanguage?: string;
+  learningContext?: string;
+  customModel?: string;
+}
+
+export interface AiMentorResponsePayload {
+  aiResponse: string;
+  selectedModel: string;
+  status: 'SUCCESS' | 'FALLBACK' | 'ERROR';
+  programmingLanguage?: string;
+  learningContext?: string;
+  timestamp: string;
+  notice?: string;
+}
+

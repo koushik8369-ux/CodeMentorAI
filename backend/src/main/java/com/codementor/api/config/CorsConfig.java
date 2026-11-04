@@ -13,12 +13,17 @@ import java.util.List;
 @Configuration
 public class CorsConfig implements WebMvcConfigurer {
 
-    @Value("${app.cors.allowed-origins:http://localhost:5173}")
+    @Value("${app.cors.allowed-origins:https://code-mentor-ai-hkrx.vercel.app,http://localhost:5173,http://localhost:3000}")
     private String allowedOrigins;
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        List<String> origins = new ArrayList<>(Arrays.asList("http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:3000"));
+        List<String> origins = new ArrayList<>(Arrays.asList(
+                "http://localhost:5173",
+                "http://127.0.0.1:5173",
+                "http://localhost:3000",
+                "https://code-mentor-ai-hkrx.vercel.app"
+        ));
 
         if (allowedOrigins != null && !allowedOrigins.isBlank()) {
             String[] split = allowedOrigins.split(",");
@@ -30,16 +35,18 @@ public class CorsConfig implements WebMvcConfigurer {
             }
         }
 
-        CorsRegistration registration = registry.addMapping("/api/**")
+        CorsRegistration registration = registry.addMapping("/**")
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH")
                 .allowedHeaders("*")
                 .allowCredentials(true)
                 .maxAge(3600);
 
-        if (origins.contains("*")) {
-            registration.allowedOriginPatterns("*");
-        } else {
-            registration.allowedOrigins(origins.toArray(new String[0]));
-        }
+        // Support local dev server dynamic ports only; broad *.vercel.app and *.onrender.com are removed
+        registration.allowedOriginPatterns(
+                "http://localhost:*",
+                "http://127.0.0.1:*"
+        );
+
+        registration.allowedOrigins(origins.toArray(new String[0]));
     }
 }
