@@ -203,12 +203,39 @@ public class AiMentorTests {
     }
 
     @Test
-    @DisplayName("Response parsing: extracts choices[0].message.reasoning when content is null (Tencent Hy4 reasoning)")
-    void testExtractReasoningWhenContentIsNull() throws Exception {
-        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"reasoning\":\"Reasoning output from Hy4\"}}]}";
+    @DisplayName("Response parsing: reasoning-only response with null content returns null (never exposes internal reasoning)")
+    void testReasoningOnlyResponseNeverExposed() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"reasoning\":\"Internal thought process: Let's solve two sum...\"}}]}";
         com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
         String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
-        org.junit.jupiter.api.Assertions.assertEquals("Reasoning output from Hy4", extracted);
+        org.junit.jupiter.api.Assertions.assertNull(extracted, "Reasoning field must never be exposed when content is null");
+    }
+
+    @Test
+    @DisplayName("Response parsing: reasoning_content with null content returns null")
+    void testReasoningContentNeverExposed() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"reasoning_content\":\"Detailed chain-of-thought...\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertNull(extracted, "reasoning_content must never be exposed");
+    }
+
+    @Test
+    @DisplayName("Response parsing: strips <think> tags from content and returns only final answer")
+    void testContentWithEmbeddedThinkingStripsPlanning() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"<think>Let's plan the steps to solve this</think>Here is the clean Java solution:\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertEquals("Here is the clean Java solution:", extracted);
+    }
+
+    @Test
+    @DisplayName("Response parsing: content containing only thinking tags returns null to trigger fallback")
+    void testThinkingOnlyContentReturnsNull() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"<think>Only planning steps here, no real answer</think>\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertNull(extracted);
     }
 
     @Test
@@ -218,6 +245,15 @@ public class AiMentorTests {
         com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
         String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
         org.junit.jupiter.api.Assertions.assertEquals("Part 1 Part 2", extracted);
+    }
+
+    @Test
+    @DisplayName("Response parsing: skips reasoning parts within array content")
+    void testExtractArraySkipsReasoningParts() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"reasoning\",\"text\":\"Internal plan\"},{\"type\":\"text\",\"text\":\"Actual answer\"}]}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertEquals("Actual answer", extracted);
     }
 
     @Test

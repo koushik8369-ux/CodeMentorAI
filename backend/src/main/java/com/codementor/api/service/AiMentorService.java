@@ -194,10 +194,28 @@ public class AiMentorService {
         String extractedContent = extractContentFromOpenRouterResponse(rootNode);
 
         if (extractedContent == null || extractedContent.isBlank() || "null".equalsIgnoreCase(extractedContent.trim())) {
-            throw new RuntimeException("Empty or null response content received from OpenRouter.");
+            throw new RuntimeException("OpenRouter response did not contain user-facing content (null, empty, or reasoning-only).");
         }
 
         return extractedContent.trim();
+    }
+
+    private static final java.util.regex.Pattern THINK_TAG_PATTERN =
+            java.util.regex.Pattern.compile("(?is)<(think|thought)[^>]*>.*?</\\1>");
+    private static final java.util.regex.Pattern LOOSE_THINK_TAG_PATTERN =
+            java.util.regex.Pattern.compile("(?is)</?(think|thought)[^>]*>");
+
+    public String cleanUserFacingContent(String text) {
+        if (text == null) {
+            return null;
+        }
+        String cleaned = THINK_TAG_PATTERN.matcher(text).replaceAll("");
+        cleaned = LOOSE_THINK_TAG_PATTERN.matcher(cleaned).replaceAll("");
+        cleaned = cleaned.trim();
+        if (cleaned.isBlank() || "null".equalsIgnoreCase(cleaned)) {
+            return null;
+        }
+        return cleaned;
     }
 
     public String extractContentFromOpenRouterResponse(JsonNode rootNode) {
@@ -207,75 +225,41 @@ public class AiMentorService {
 
         JsonNode choices = rootNode.path("choices");
         if (!choices.isArray() || choices.isEmpty()) {
-            // Check top-level text if available
-            JsonNode topText = rootNode.path("text");
-            if (!topText.isMissingNode() && !topText.isNull() && !topText.asText().isBlank()) {
-                String val = topText.asText().trim();
-                return "null".equalsIgnoreCase(val) ? null : val;
-            }
             return null;
         }
 
         JsonNode firstChoice = choices.get(0);
         JsonNode messageNode = firstChoice.path("message");
-
-        // 1. Try message.content as text string
         JsonNode contentNode = messageNode.path("content");
-        if (!contentNode.isMissingNode() && !contentNode.isNull()) {
-            if (contentNode.isTextual()) {
-                String text = contentNode.asText().trim();
-                if (!text.isEmpty() && !"null".equalsIgnoreCase(text)) {
-                    return text;
-                }
-            } else if (contentNode.isArray()) {
-                // 2. Try message.content as array of structured parts (multimodal/reasoning)
-                StringBuilder sb = new StringBuilder();
-                for (JsonNode part : contentNode) {
-                    JsonNode textPart = part.path("text");
-                    if (!textPart.isMissingNode() && !textPart.isNull() && !textPart.asText().isBlank()) {
-                        sb.append(textPart.asText());
+
+        if (contentNode.isMissingNode() || contentNode.isNull()) {
+            return null;
+        }
+
+        // 1. Plain string content
+        if (contentNode.isTextual()) {
+            return cleanUserFacingContent(contentNode.asText());
+        }
+
+        // 2. Array-based structured content, e.g. [{"type": "text", "text": "..."}]
+        if (contentNode.isArray()) {
+            StringBuilder sb = new StringBuilder();
+            for (JsonNode part : contentNode) {
+                if (part.isTextual()) {
+                    sb.append(part.asText());
+                } else if (part.isObject()) {
+                    String partType = part.path("type").asText("");
+                    // Explicitly skip any reasoning/thought parts
+                    if ("reasoning".equalsIgnoreCase(partType) || "thought".equalsIgnoreCase(partType) || "thinking".equalsIgnoreCase(partType)) {
+                        continue;
+                    }
+                    JsonNode textNode = part.path("text");
+                    if (!textNode.isMissingNode() && !textNode.isNull() && !textNode.asText().isBlank()) {
+                        sb.append(textNode.asText());
                     }
                 }
-                String combined = sb.toString().trim();
-                if (!combined.isEmpty() && !"null".equalsIgnoreCase(combined)) {
-                    return combined;
-                }
             }
-        }
-
-        // 3. Try message.reasoning or message.reasoning_content (Tencent Hy4 / reasoning models on OpenRouter)
-        JsonNode reasoningNode = messageNode.path("reasoning");
-        if (!reasoningNode.isMissingNode() && !reasoningNode.isNull() && !reasoningNode.asText().isBlank()) {
-            String reasoningText = reasoningNode.asText().trim();
-            if (!reasoningText.isEmpty() && !"null".equalsIgnoreCase(reasoningText)) {
-                return reasoningText;
-            }
-        }
-
-        JsonNode reasoningContentNode = messageNode.path("reasoning_content");
-        if (!reasoningContentNode.isMissingNode() && !reasoningContentNode.isNull() && !reasoningContentNode.asText().isBlank()) {
-            String rcText = reasoningContentNode.asText().trim();
-            if (!rcText.isEmpty() && !"null".equalsIgnoreCase(rcText)) {
-                return rcText;
-            }
-        }
-
-        // 4. Try choice.text (legacy / completions format fallback)
-        JsonNode textNode = firstChoice.path("text");
-        if (!textNode.isMissingNode() && !textNode.isNull() && !textNode.asText().isBlank()) {
-            String choiceText = textNode.asText().trim();
-            if (!choiceText.isEmpty() && !"null".equalsIgnoreCase(choiceText)) {
-                return choiceText;
-            }
-        }
-
-        // 5. Try message.delta.content (streaming chunk fallback)
-        JsonNode deltaContent = firstChoice.path("delta").path("content");
-        if (!deltaContent.isMissingNode() && !deltaContent.isNull() && !deltaContent.asText().isBlank()) {
-            String deltaText = deltaContent.asText().trim();
-            if (!deltaText.isEmpty() && !"null".equalsIgnoreCase(deltaText)) {
-                return deltaText;
-            }
+            return cleanUserFacingContent(sb.toString());
         }
 
         return null;

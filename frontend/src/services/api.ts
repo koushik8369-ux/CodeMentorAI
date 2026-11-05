@@ -438,10 +438,19 @@ export const api = {
       throw new Error(errBody.message || `AI Mentor request failed (HTTP ${res.status})`);
     }
     const data = await res.json();
-    const candidateText = data.aiResponse || data.response || data.content || data.message;
-    const cleanText = (candidateText && typeof candidateText === 'string' && candidateText.trim() !== '' && candidateText.trim() !== 'null')
-      ? candidateText.trim()
+    const rawCandidate = data.aiResponse || data.response || data.content || data.message;
+    let cleanText = (rawCandidate && typeof rawCandidate === 'string' && rawCandidate.trim() !== '' && rawCandidate.trim() !== 'null')
+      ? rawCandidate.trim()
       : '';
+    if (cleanText) {
+      cleanText = cleanText
+        .replace(/<(think|thought)[^>]*>[\s\S]*?<\/\1>/gi, '')
+        .replace(/<\/?(think|thought)[^>]*>/gi, '')
+        .trim();
+      if (cleanText === 'null' || cleanText === '') {
+        cleanText = '';
+      }
+    }
     return {
       ...data,
       aiResponse: cleanText,

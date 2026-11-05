@@ -258,14 +258,28 @@ Choose a quick starter topic above or type any coding question or snippet below!
 
   // Helper to render markdown content with syntax codeblocks & copy buttons
   const renderMessageContent = (content: string, messageId: string) => {
-    if (!content || typeof content !== 'string' || content.trim() === '' || content.trim() === 'null') {
+    if (!content || typeof content !== 'string') {
       return (
         <p className="text-amber-300 text-sm italic">
           No content received for this response. Please retry your query or check model configuration.
         </p>
       );
     }
-    const parts = content.split(/(```[\s\S]*?```)/g);
+
+    const sanitized = content
+      .replace(/<(think|thought)[^>]*>[\s\S]*?<\/\1>/gi, '')
+      .replace(/<\/?(think|thought)[^>]*>/gi, '')
+      .trim();
+
+    if (!sanitized || sanitized === 'null') {
+      return (
+        <p className="text-amber-300 text-sm italic">
+          No content received for this response. Please retry your query or check model configuration.
+        </p>
+      );
+    }
+
+    const parts = sanitized.split(/(```[\s\S]*?```)/g);
 
     return parts.map((part, index) => {
       if (part.startsWith('```') && part.endsWith('```')) {
