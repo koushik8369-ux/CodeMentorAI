@@ -1,5 +1,6 @@
 package com.codementor.api.dto;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
 
 public class AiMentorResponse {
@@ -17,29 +18,62 @@ public class AiMentorResponse {
     }
 
     public AiMentorResponse(String aiResponse, String selectedModel, String status) {
-        this.aiResponse = aiResponse;
+        this.status = sanitizeStatus(aiResponse, status);
+        this.aiResponse = sanitizeResponse(aiResponse);
         this.selectedModel = selectedModel;
-        this.status = status;
         this.timestamp = Instant.now().toString();
     }
 
     public AiMentorResponse(String aiResponse, String selectedModel, String status,
                             String programmingLanguage, String learningContext, String notice) {
-        this.aiResponse = aiResponse;
+        this.status = sanitizeStatus(aiResponse, status);
+        this.aiResponse = sanitizeResponse(aiResponse);
         this.selectedModel = selectedModel;
-        this.status = status;
         this.programmingLanguage = programmingLanguage;
         this.learningContext = learningContext;
         this.timestamp = Instant.now().toString();
         this.notice = notice;
     }
 
+    private String sanitizeResponse(String response) {
+        if (response == null || response.isBlank() || "null".equalsIgnoreCase(response.trim())) {
+            return "Unable to retrieve generated response from mentor engine. Please try again or rephrase your question.";
+        }
+        return response.trim();
+    }
+
+    private String sanitizeStatus(String rawResponse, String currentStatus) {
+        if (rawResponse == null || rawResponse.isBlank() || "null".equalsIgnoreCase(rawResponse.trim())) {
+            return "FALLBACK";
+        }
+        return currentStatus != null ? currentStatus : "SUCCESS";
+    }
+
+    @JsonProperty("aiResponse")
     public String getAiResponse() {
         return aiResponse;
     }
 
+    @JsonProperty("response")
+    public String getResponse() {
+        return aiResponse;
+    }
+
+    @JsonProperty("content")
+    public String getContent() {
+        return aiResponse;
+    }
+
+    @JsonProperty("message")
+    public String getMessage() {
+        return aiResponse;
+    }
+
     public void setAiResponse(String aiResponse) {
-        this.aiResponse = aiResponse;
+        if (aiResponse == null || aiResponse.isBlank() || "null".equalsIgnoreCase(aiResponse.trim())) {
+            this.status = "FALLBACK";
+        }
+        this.aiResponse = sanitizeResponse(aiResponse);
     }
 
     public String getSelectedModel() {

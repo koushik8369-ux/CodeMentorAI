@@ -65,10 +65,8 @@ const QUICK_TOPICS = [
 const AVAILABLE_MODELS = [
   { id: 'tencent/hy4', label: 'Tencent Hy4 (Active Default)' },
   { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3' },
-  { id: 'google/gemini-2.0-flash-001', label: 'Gemini 2.0 Flash' },
   { id: 'meta-llama/llama-3.3-70b-instruct', label: 'Llama 3.3 70B Instruct' },
   { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini' },
-  { id: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet' },
 ];
 
 export const MentorPage: React.FC = () => {
@@ -174,13 +172,22 @@ Choose a quick starter topic above or type any coding question or snippet below!
         customModel: customOverride,
       });
 
+      const rawText = res.aiResponse || (res as any).response || (res as any).content || (res as any).message;
+      const cleanContent = (rawText && typeof rawText === 'string' && rawText.trim() !== '' && rawText.trim() !== 'null')
+        ? rawText.trim()
+        : (res.notice || 'Heuristic mentor response provided. Upstream AI content was not available.');
+
+      const resolvedStatus = (res.status === 'SUCCESS' && (!rawText || rawText === 'null' || rawText.trim() === ''))
+        ? 'FALLBACK'
+        : res.status;
+
       const assistantMsg: AiMentorMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: res.aiResponse,
+        content: cleanContent,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        model: res.selectedModel,
-        status: res.status,
+        model: res.selectedModel || selectedModel,
+        status: resolvedStatus,
         language: res.programmingLanguage,
         context: res.learningContext,
       };
@@ -251,6 +258,13 @@ Choose a quick starter topic above or type any coding question or snippet below!
 
   // Helper to render markdown content with syntax codeblocks & copy buttons
   const renderMessageContent = (content: string, messageId: string) => {
+    if (!content || typeof content !== 'string' || content.trim() === '' || content.trim() === 'null') {
+      return (
+        <p className="text-amber-300 text-sm italic">
+          No content received for this response. Please retry your query or check model configuration.
+        </p>
+      );
+    }
     const parts = content.split(/(```[\s\S]*?```)/g);
 
     return parts.map((part, index) => {
@@ -480,7 +494,9 @@ Choose a quick starter topic above or type any coding question or snippet below!
                     <div className="mt-3 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs flex items-start gap-2">
                       <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-400" />
                       <span>
-                        Heuristic mentor engine response active. For full live LLM generations, add your rotated <code className="font-mono text-amber-200">OPENROUTER_API_KEY</code> to Render backend environment variables.
+                        {backendConfig?.isConfigured
+                          ? 'Heuristic mentor engine response active (upstream OpenRouter API response unavailable or model routing issue).'
+                          : <>Heuristic mentor engine response active. For full live LLM generations, add your rotated <code className="font-mono text-amber-200">OPENROUTER_API_KEY</code> to Render backend environment variables.</>}
                       </span>
                     </div>
                   )}

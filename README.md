@@ -86,7 +86,7 @@ The system operates with a **stateless, zero-database architecture**:
    - Clear disclosures regarding local client scoping.
 6. **OpenRouter AI Programming Mentor Agent**:
    - Interactive conversational mentor covering Java, OOP, DSA, React/TypeScript, Spring Boot, SQL, and System Design.
-   - Integrates with OpenRouter API (`anthropic/claude-3.5-sonnet` by default, fully configurable via `OPENROUTER_MODEL`).
+   - Integrates with OpenRouter API (`tencent/hy4` by default, fully configurable via `OPENROUTER_MODEL`).
    - Structured 6-step pedagogy: Understand & Clarify &rarr; Concept &rarr; Practical Code Example &rarr; Step-by-Step Walkthrough &rarr; Common Pitfalls &rarr; Optimization & Next Steps.
    - Zero-DB conversation persistence in browser `localStorage` with Markdown export.
 
@@ -102,7 +102,7 @@ The system operates with a **stateless, zero-database architecture**:
 | `GEMINI_API_KEY` | Recommended | Empty (fallback heuristics used) | Google Gemini API key for coding problems & mock interviews; isolated strictly on server-side |
 | `GEMINI_MODEL` | Optional | `gemini-3.8-flash` | Gemini model identifier |
 | `OPENROUTER_API_KEY` | Recommended | Empty (fallback heuristics used) | OpenRouter API key for the AI Programming Mentor agent; isolated strictly on server-side |
-| `OPENROUTER_MODEL` | Optional | `anthropic/claude-3.5-sonnet` | Model identifier for OpenRouter (e.g. `google/gemini-2.0-flash-001`, `meta-llama/llama-3.3-70b-instruct`) |
+| `OPENROUTER_MODEL` | Optional | `tencent/hy4` | Model identifier for OpenRouter (e.g. `tencent/hy4`, `deepseek/deepseek-chat`, `meta-llama/llama-3.3-70b-instruct`) |
 | `JWT_SECRET` | Optional | 512-bit built-in seed | Secret key for JWT signing (fails safely to secure seed if too short) |
 | `CORS_ALLOWED_ORIGINS` | Optional | `http://localhost:5173,http://localhost:3000` | Comma-separated list of allowed frontend origins (e.g. `https://your-frontend.vercel.app`) |
 | `APP_URL` | Optional | `http://localhost:5173` | Primary frontend application URL |

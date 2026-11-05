@@ -437,7 +437,15 @@ export const api = {
       const errBody = await res.json().catch(() => ({}));
       throw new Error(errBody.message || `AI Mentor request failed (HTTP ${res.status})`);
     }
-    return await res.json();
+    const data = await res.json();
+    const candidateText = data.aiResponse || data.response || data.content || data.message;
+    const cleanText = (candidateText && typeof candidateText === 'string' && candidateText.trim() !== '' && candidateText.trim() !== 'null')
+      ? candidateText.trim()
+      : '';
+    return {
+      ...data,
+      aiResponse: cleanText,
+    };
   },
 
   async getMentorStatus(): Promise<{ service: string; provider: string; defaultModel: string; isConfigured: boolean; status: string }> {

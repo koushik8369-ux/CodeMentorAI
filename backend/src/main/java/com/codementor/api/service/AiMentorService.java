@@ -46,8 +46,8 @@ public class AiMentorService {
         if (openRouterConfig.isApiKeyConfigured()) {
             try {
                 String aiText = callOpenRouterApi(request, model, lang, context);
-                if (aiText != null && !aiText.isBlank()) {
-                    return new AiMentorResponse(aiText, model, "SUCCESS", lang, context, null);
+                if (aiText != null && !aiText.isBlank() && !"null".equalsIgnoreCase(aiText.trim())) {
+                    return new AiMentorResponse(aiText.trim(), model, "SUCCESS", lang, context, null);
                 }
             } catch (OpenRouterApiException e) {
                 lastErrorNotice = "Upstream OpenRouter error (HTTP " + e.getStatusCode() + ": " + e.getResponseSummary() + "). Heuristic mentor response provided.";
@@ -70,10 +70,31 @@ public class AiMentorService {
         return new AiMentorResponse(fallbackAnswer, model + " (Fallback Heuristic)", "FALLBACK", lang, context, notice);
     }
 
+    private static final Set<String> VERIFIED_MODELS = Set.of(
+            "tencent/hy4",
+            "deepseek/deepseek-chat",
+            "meta-llama/llama-3.3-70b-instruct",
+            "openai/gpt-4o-mini"
+    );
+
     public String resolveModel(String customOverride) {
         if (customOverride != null && !customOverride.isBlank()) {
             String trimmed = customOverride.trim();
-            if (!"default".equalsIgnoreCase(trimmed) && !"auto".equalsIgnoreCase(trimmed)) {
+            // Automatically reroute retired or broken models and sentinels to authoritative default
+            if ("google/gemini-2.0-flash-001".equalsIgnoreCase(trimmed)
+                    || "anthropic/claude-3.5-sonnet".equalsIgnoreCase(trimmed)
+                    || "default".equalsIgnoreCase(trimmed)
+                    || "auto".equalsIgnoreCase(trimmed)) {
+                logger.info("Custom model '{}' is retired or default sentinel. Routing to authoritative default '{}'",
+                        trimmed, openRouterConfig.getDefaultModel());
+                return openRouterConfig.getDefaultModel();
+            }
+            // If the model matches configured default or is in verified list, allow it
+            if (trimmed.equalsIgnoreCase(openRouterConfig.getDefaultModel()) || VERIFIED_MODELS.contains(trimmed)) {
+                return trimmed;
+            }
+            // For any other model with valid organization/name format, allow it
+            if (trimmed.contains("/") && !trimmed.contains(" ")) {
                 return trimmed;
             }
         }
@@ -170,13 +191,94 @@ public class AiMentorService {
         }
 
         JsonNode rootNode = objectMapper.readTree(response.body());
-        JsonNode contentNode = rootNode.path("choices").path(0).path("message").path("content");
+        String extractedContent = extractContentFromOpenRouterResponse(rootNode);
 
-        if (contentNode.isMissingNode() || contentNode.asText().isBlank()) {
-            throw new RuntimeException("Empty response content received from OpenRouter.");
+        if (extractedContent == null || extractedContent.isBlank() || "null".equalsIgnoreCase(extractedContent.trim())) {
+            throw new RuntimeException("Empty or null response content received from OpenRouter.");
         }
 
-        return contentNode.asText().trim();
+        return extractedContent.trim();
+    }
+
+    public String extractContentFromOpenRouterResponse(JsonNode rootNode) {
+        if (rootNode == null || rootNode.isMissingNode() || rootNode.isNull()) {
+            return null;
+        }
+
+        JsonNode choices = rootNode.path("choices");
+        if (!choices.isArray() || choices.isEmpty()) {
+            // Check top-level text if available
+            JsonNode topText = rootNode.path("text");
+            if (!topText.isMissingNode() && !topText.isNull() && !topText.asText().isBlank()) {
+                String val = topText.asText().trim();
+                return "null".equalsIgnoreCase(val) ? null : val;
+            }
+            return null;
+        }
+
+        JsonNode firstChoice = choices.get(0);
+        JsonNode messageNode = firstChoice.path("message");
+
+        // 1. Try message.content as text string
+        JsonNode contentNode = messageNode.path("content");
+        if (!contentNode.isMissingNode() && !contentNode.isNull()) {
+            if (contentNode.isTextual()) {
+                String text = contentNode.asText().trim();
+                if (!text.isEmpty() && !"null".equalsIgnoreCase(text)) {
+                    return text;
+                }
+            } else if (contentNode.isArray()) {
+                // 2. Try message.content as array of structured parts (multimodal/reasoning)
+                StringBuilder sb = new StringBuilder();
+                for (JsonNode part : contentNode) {
+                    JsonNode textPart = part.path("text");
+                    if (!textPart.isMissingNode() && !textPart.isNull() && !textPart.asText().isBlank()) {
+                        sb.append(textPart.asText());
+                    }
+                }
+                String combined = sb.toString().trim();
+                if (!combined.isEmpty() && !"null".equalsIgnoreCase(combined)) {
+                    return combined;
+                }
+            }
+        }
+
+        // 3. Try message.reasoning or message.reasoning_content (Tencent Hy4 / reasoning models on OpenRouter)
+        JsonNode reasoningNode = messageNode.path("reasoning");
+        if (!reasoningNode.isMissingNode() && !reasoningNode.isNull() && !reasoningNode.asText().isBlank()) {
+            String reasoningText = reasoningNode.asText().trim();
+            if (!reasoningText.isEmpty() && !"null".equalsIgnoreCase(reasoningText)) {
+                return reasoningText;
+            }
+        }
+
+        JsonNode reasoningContentNode = messageNode.path("reasoning_content");
+        if (!reasoningContentNode.isMissingNode() && !reasoningContentNode.isNull() && !reasoningContentNode.asText().isBlank()) {
+            String rcText = reasoningContentNode.asText().trim();
+            if (!rcText.isEmpty() && !"null".equalsIgnoreCase(rcText)) {
+                return rcText;
+            }
+        }
+
+        // 4. Try choice.text (legacy / completions format fallback)
+        JsonNode textNode = firstChoice.path("text");
+        if (!textNode.isMissingNode() && !textNode.isNull() && !textNode.asText().isBlank()) {
+            String choiceText = textNode.asText().trim();
+            if (!choiceText.isEmpty() && !"null".equalsIgnoreCase(choiceText)) {
+                return choiceText;
+            }
+        }
+
+        // 5. Try message.delta.content (streaming chunk fallback)
+        JsonNode deltaContent = firstChoice.path("delta").path("content");
+        if (!deltaContent.isMissingNode() && !deltaContent.isNull() && !deltaContent.asText().isBlank()) {
+            String deltaText = deltaContent.asText().trim();
+            if (!deltaText.isEmpty() && !"null".equalsIgnoreCase(deltaText)) {
+                return deltaText;
+            }
+        }
+
+        return null;
     }
 
     public static class OpenRouterApiException extends RuntimeException {

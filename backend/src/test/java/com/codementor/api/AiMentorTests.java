@@ -184,21 +184,75 @@ public class AiMentorTests {
     }
 
     @Test
-    @DisplayName("POST /api/mentor/chat with invalid customModel falls back gracefully with diagnostic notice")
-    void testChatFallbackWithDiagnosticNotice() throws Exception {
-        AiMentorRequest request = new AiMentorRequest(
-                "Explain Java memory model",
-                List.of(),
-                "Java",
-                "Concurrency"
-        );
-        request.setCustomModel("invalid/nonexistent-model-404");
+    @DisplayName("Retired models are safely rerouted to authoritative default tencent/hy4")
+    void testRetiredModelsReroutedToAuthoritativeDefault() {
+        String defaultModel = openRouterConfig.getDefaultModel();
+        org.junit.jupiter.api.Assertions.assertEquals(defaultModel,
+                aiMentorService.resolveModel("google/gemini-2.0-flash-001"));
+        org.junit.jupiter.api.Assertions.assertEquals(defaultModel,
+                aiMentorService.resolveModel("anthropic/claude-3.5-sonnet"));
+    }
 
-        mockMvc.perform(post("/api/mentor/chat")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status", anyOf(is("SUCCESS"), is("FALLBACK"))))
-                .andExpect(jsonPath("$.selectedModel", containsString("invalid/nonexistent-model-404")));
+    @Test
+    @DisplayName("Response parsing: extracts standard choices[0].message.content string")
+    void testExtractStandardContent() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"Standard output\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertEquals("Standard output", extracted);
+    }
+
+    @Test
+    @DisplayName("Response parsing: extracts choices[0].message.reasoning when content is null (Tencent Hy4 reasoning)")
+    void testExtractReasoningWhenContentIsNull() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"reasoning\":\"Reasoning output from Hy4\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertEquals("Reasoning output from Hy4", extracted);
+    }
+
+    @Test
+    @DisplayName("Response parsing: extracts structured array content parts")
+    void testExtractArrayContentParts() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Part 1 \"},{\"type\":\"text\",\"text\":\"Part 2\"}]}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertEquals("Part 1 Part 2", extracted);
+    }
+
+    @Test
+    @DisplayName("Response parsing: returns null when content is literal 'null' or missing")
+    void testExtractNullReturnsNull() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"null\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertNull(extracted);
+    }
+
+    @Test
+    @DisplayName("AiMentorResponse DTO: serializes aiResponse, response, content, and message for frontend normalization")
+    void testDtoSerializationContract() throws Exception {
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                "Generated code explanation", "tencent/hy4", "SUCCESS", "Java", "DSA", null
+        );
+        String json = objectMapper.writeValueAsString(response);
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+
+        org.junit.jupiter.api.Assertions.assertEquals("Generated code explanation", node.path("aiResponse").asText());
+        org.junit.jupiter.api.Assertions.assertEquals("Generated code explanation", node.path("response").asText());
+        org.junit.jupiter.api.Assertions.assertEquals("Generated code explanation", node.path("content").asText());
+        org.junit.jupiter.api.Assertions.assertEquals("Generated code explanation", node.path("message").asText());
+        org.junit.jupiter.api.Assertions.assertEquals("SUCCESS", node.path("status").asText());
+    }
+
+    @Test
+    @DisplayName("AiMentorResponse DTO: null or 'null' input is sanitized and status is downgraded to FALLBACK")
+    void testSanitizeNullAiResponse() {
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                "null", "tencent/hy4", "SUCCESS"
+        );
+        org.junit.jupiter.api.Assertions.assertNotEquals("null", response.getAiResponse());
+        org.junit.jupiter.api.Assertions.assertFalse(response.getAiResponse().isBlank());
+        org.junit.jupiter.api.Assertions.assertEquals("FALLBACK", response.getStatus());
     }
 }
