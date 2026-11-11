@@ -4,10 +4,12 @@ import com.codementor.api.config.OpenRouterConfig;
 import com.codementor.api.dto.AiMentorChatMessage;
 import com.codementor.api.dto.AiMentorRequest;
 import com.codementor.api.dto.AiMentorResponse;
+import com.codementor.api.dto.JavaCodeBlockValidation;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -23,6 +25,7 @@ public class AiMentorService {
     private static final Logger logger = LoggerFactory.getLogger(AiMentorService.class);
 
     private final OpenRouterConfig openRouterConfig;
+    private final JavaCodeValidationService javaCodeValidationService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final HttpClient httpClient = HttpClient.newBuilder()
             .version(HttpClient.Version.HTTP_1_1)
@@ -30,7 +33,13 @@ public class AiMentorService {
             .build();
 
     public AiMentorService(OpenRouterConfig openRouterConfig) {
+        this(openRouterConfig, new JavaCodeValidationService());
+    }
+
+    @Autowired
+    public AiMentorService(OpenRouterConfig openRouterConfig, JavaCodeValidationService javaCodeValidationService) {
         this.openRouterConfig = openRouterConfig;
+        this.javaCodeValidationService = javaCodeValidationService != null ? javaCodeValidationService : new JavaCodeValidationService();
     }
 
     public AiMentorResponse chatWithMentor(AiMentorRequest request) {
@@ -47,7 +56,9 @@ public class AiMentorService {
             try {
                 String aiText = callOpenRouterApi(request, model, lang, context);
                 if (aiText != null && !aiText.isBlank() && !"null".equalsIgnoreCase(aiText.trim())) {
-                    return new AiMentorResponse(aiText.trim(), model, "SUCCESS", lang, context, null);
+                    AiMentorResponse response = new AiMentorResponse(aiText.trim(), model, "SUCCESS", lang, context, null);
+                    validateAndEnrichResponse(response, model, lang);
+                    return response;
                 }
             } catch (OpenRouterApiException e) {
                 lastErrorNotice = "Upstream OpenRouter error (HTTP " + e.getStatusCode() + ": " + e.getResponseSummary() + "). Heuristic mentor response provided.";
@@ -67,7 +78,9 @@ public class AiMentorService {
                     ? "OpenRouter API response unavailable. Heuristic mentor response provided."
                     : "OpenRouter API key not detected in backend environment. To enable live LLM generation, set OPENROUTER_API_KEY in Render environment variables.");
 
-        return new AiMentorResponse(fallbackAnswer, model + " (Fallback Heuristic)", "FALLBACK", lang, context, notice);
+        AiMentorResponse fallbackResponse = new AiMentorResponse(fallbackAnswer, model + " (Fallback Heuristic)", "FALLBACK", lang, context, notice);
+        validateAndEnrichResponse(fallbackResponse, model, lang);
+        return fallbackResponse;
     }
 
     private static final Set<String> VERIFIED_MODELS = Set.of(
@@ -617,5 +630,165 @@ public class AiMentorService {
                 + "### 6. Mentoring Recommendations & Next Steps\n"
                 + "- Would you like to dive deeper into testing strategies (e.g. Unit testing with JUnit/Jest or Integration testing)?\n"
                 + "- If you have a specific code snippet you are currently writing, paste it here and we can conduct an in-depth code review together!";
+    }
+
+    public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
+        if (!openRouterConfig.isApiKeyConfigured()) {
+            return null;
+        }
+        try {
+            Map<String, Object> payload = new HashMap<>();
+            payload.put("model", model);
+            List<Map<String, String>> messages = new ArrayList<>();
+            messages.add(Map.of("role", "system", "content",
+                    "You are a precise Java code syntax repair assistant. Fix the syntax errors in the provided Java snippet so it is valid under Java 21 grammar. Preserve the original logic, variable names, and intended functionality. Return ONLY the corrected Java code inside a single ```java ... ``` code block without additional conversational commentary."));
+            messages.add(Map.of("role", "user", "content",
+                    "The following Java code failed Java 21 syntax validation.\nParser Error: " + errorMessage
+                            + "\n\nOriginal Code:\n```java\n" + brokenCode + "\n```\n\nProvide the corrected Java code:"));
+            payload.put("messages", messages);
+            payload.put("temperature", 0.1);
+            payload.put("max_tokens", 4096);
+
+            String jsonBody = objectMapper.writeValueAsString(payload);
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(openRouterConfig.getApiUrl()))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + openRouterConfig.getApiKey())
+                    .header("HTTP-Referer", "https://codementor.ai")
+                    .header("X-Title", "CodeMentor AI Java Syntax Validator")
+                    .timeout(Duration.ofSeconds(30))
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200 && response.body() != null) {
+                JsonNode root = objectMapper.readTree(response.body());
+                String extracted = extractContentFromOpenRouterResponse(root);
+                if (extracted != null && !extracted.isBlank()) {
+                    List<JavaCodeValidationService.ExtractedBlock> blocks = javaCodeValidationService.extractCodeBlocks(extracted);
+                    if (!blocks.isEmpty()) {
+                        return blocks.get(0).getCode().trim();
+                    }
+                    return extracted.trim();
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Syntax correction request to OpenRouter failed: {}", redactSecrets(e.getMessage()));
+        }
+        return null;
+    }
+
+    public void validateAndEnrichResponse(AiMentorResponse response, String model, String conversationLanguage) {
+        if (response == null || response.getAiResponse() == null) {
+            return;
+        }
+        String text = response.getAiResponse();
+        List<JavaCodeValidationService.ExtractedBlock> blocks = javaCodeValidationService.extractCodeBlocks(text);
+        if (blocks.isEmpty()) {
+            response.setValidationStatus("NOT_CHECKED");
+            response.setValidationSummary("No code blocks detected in response.");
+            return;
+        }
+
+        List<JavaCodeBlockValidation> details = new ArrayList<>();
+        Map<Integer, String> replacements = new HashMap<>();
+        boolean hasJava = false;
+        boolean hasInvalid = false;
+        boolean anyCorrected = false;
+
+        for (JavaCodeValidationService.ExtractedBlock block : blocks) {
+            boolean isJava = javaCodeValidationService.isJavaBlock(block.getLanguage(), conversationLanguage, block.getCode());
+            if (!isJava) {
+                String lang = (block.getLanguage() != null && !block.getLanguage().isBlank()) ? block.getLanguage() : "text";
+                details.add(new JavaCodeBlockValidation(
+                        block.getIndex(),
+                        lang,
+                        "NOT_CHECKED",
+                        false,
+                        null,
+                        "Syntax validation not applicable for " + lang + " snippet"
+                ));
+                continue;
+            }
+
+            hasJava = true;
+            JavaCodeValidationService.ValidationResult result = javaCodeValidationService.validateJavaSnippet(block.getCode());
+
+            if (result.isValid()) {
+                details.add(new JavaCodeBlockValidation(
+                        block.getIndex(),
+                        "java",
+                        "VALID",
+                        false,
+                        null,
+                        result.getMessage()
+                ));
+            } else {
+                // Attempt single correction if API is configured
+                boolean correctedSuccess = false;
+                String correctedCode = null;
+                if (openRouterConfig.isApiKeyConfigured()) {
+                    correctedCode = requestSyntaxCorrection(model, block.getCode(), result.getMessage());
+                    if (correctedCode != null && !correctedCode.isBlank()) {
+                        JavaCodeValidationService.ValidationResult recheck = javaCodeValidationService.validateJavaSnippet(correctedCode);
+                        if (recheck.isValid()) {
+                            correctedSuccess = true;
+                            anyCorrected = true;
+                            replacements.put(block.getIndex(), correctedCode);
+                            details.add(new JavaCodeBlockValidation(
+                                    block.getIndex(),
+                                    "java",
+                                    "VALID",
+                                    true,
+                                    null,
+                                    "Java syntax automatically corrected and validated (Java 21 parser)"
+                            ));
+                        }
+                    }
+                }
+
+                if (!correctedSuccess) {
+                    hasInvalid = true;
+                    details.add(new JavaCodeBlockValidation(
+                            block.getIndex(),
+                            "java",
+                            "INVALID",
+                            false,
+                            result.getMessage(),
+                            "Syntax warning: " + result.getMessage()
+                    ));
+                }
+            }
+        }
+
+        // If any blocks were corrected, update the text in reverse order to preserve indices
+        if (!replacements.isEmpty()) {
+            StringBuilder sb = new StringBuilder(text);
+            for (int i = blocks.size() - 1; i >= 0; i--) {
+                JavaCodeValidationService.ExtractedBlock b = blocks.get(i);
+                if (replacements.containsKey(b.getIndex())) {
+                    String langTag = (b.getLanguage() != null && !b.getLanguage().isBlank()) ? b.getLanguage() : "java";
+                    String newBlockMarkdown = "```" + langTag + "\n" + replacements.get(b.getIndex()) + "\n```";
+                    sb.replace(b.getStartIndex(), b.getEndIndex(), newBlockMarkdown);
+                }
+            }
+            response.setAiResponse(sb.toString());
+        }
+
+        response.setValidationDetails(details);
+        if (!hasJava) {
+            response.setValidationStatus("NOT_CHECKED");
+            response.setValidationSummary("No Java code snippets present for syntax validation.");
+        } else if (hasInvalid) {
+            response.setValidationStatus("INVALID");
+            response.setValidationSummary("One or more Java code snippets contain syntax parse issues. Check the highlighted warnings.");
+        } else {
+            response.setValidationStatus("VALID");
+            if (anyCorrected) {
+                response.setValidationSummary("Java syntax was automatically repaired and validated with Java 21 parser.");
+            } else {
+                response.setValidationSummary("All Java code snippets validated successfully against Java 21 syntax grammar.");
+            }
+        }
     }
 }

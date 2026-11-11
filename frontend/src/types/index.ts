@@ -272,6 +272,15 @@ export interface MockInterview {
   questions?: MockInterviewQuestion[];
 }
 
+export interface JavaCodeBlockValidation {
+  blockIndex: number;
+  language: string;
+  status: 'VALID' | 'INVALID' | 'NOT_CHECKED';
+  isCorrected?: boolean;
+  errorMessage?: string | null;
+  validationSummary?: string | null;
+}
+
 export interface AiMentorMessage {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -281,6 +290,9 @@ export interface AiMentorMessage {
   status?: 'SUCCESS' | 'FALLBACK' | 'ERROR';
   language?: string;
   context?: string;
+  validationStatus?: 'VALID' | 'INVALID' | 'NOT_CHECKED';
+  validationDetails?: JavaCodeBlockValidation[];
+  validationSummary?: string;
 }
 
 export interface AiMentorRequestPayload {
@@ -299,5 +311,8 @@ export interface AiMentorResponsePayload {
   learningContext?: string;
   timestamp: string;
   notice?: string;
+  validationStatus?: 'VALID' | 'INVALID' | 'NOT_CHECKED';
+  validationDetails?: JavaCodeBlockValidation[];
+  validationSummary?: string;
 }
 

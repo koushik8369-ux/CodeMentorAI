@@ -2,6 +2,8 @@ package com.codementor.api.dto;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 public class AiMentorResponse {
 
@@ -12,6 +14,9 @@ public class AiMentorResponse {
     private String learningContext;
     private String timestamp;
     private String notice;
+    private String validationStatus = "NOT_CHECKED"; // "VALID", "INVALID", "NOT_CHECKED"
+    private List<JavaCodeBlockValidation> validationDetails = new ArrayList<>();
+    private String validationSummary;
 
     public AiMentorResponse() {
         this.timestamp = Instant.now().toString();
@@ -122,5 +127,29 @@ public class AiMentorResponse {
 
     public void setNotice(String notice) {
         this.notice = notice;
+    }
+
+    public String getValidationStatus() {
+        return validationStatus;
+    }
+
+    public void setValidationStatus(String validationStatus) {
+        this.validationStatus = validationStatus;
+    }
+
+    public List<JavaCodeBlockValidation> getValidationDetails() {
+        return validationDetails;
+    }
+
+    public void setValidationDetails(List<JavaCodeBlockValidation> validationDetails) {
+        this.validationDetails = validationDetails;
+    }
+
+    public String getValidationSummary() {
+        return validationSummary;
+    }
+
+    public void setValidationSummary(String validationSummary) {
+        this.validationSummary = validationSummary;
     }
 }

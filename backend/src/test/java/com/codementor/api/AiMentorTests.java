@@ -38,6 +38,9 @@ public class AiMentorTests {
     private com.codementor.api.service.AiMentorService aiMentorService;
 
     @Autowired
+    private com.codementor.api.service.JavaCodeValidationService javaCodeValidationService;
+
+    @Autowired
     private com.codementor.api.config.OpenRouterConfig openRouterConfig;
 
     @Test
@@ -372,5 +375,404 @@ public class AiMentorTests {
         String summary = aiMentorService.extractErrorMessage(errJson, 429);
         org.junit.jupiter.api.Assertions.assertTrue(summary.contains("rate limit reached"));
         org.junit.jupiter.api.Assertions.assertFalse(summary.contains("sk-or-v1-secret123"));
+    }
+
+    @Test
+    @DisplayName("JavaParser validation: complete Java class passes Java 21 syntax validation")
+    void testValidateCompleteJavaClass() {
+        String validClass = "public class Solution {\n"
+                + "    public int maxSubArray(int[] nums) {\n"
+                + "        int max = nums[0], sum = 0;\n"
+                + "        for (int n : nums) {\n"
+                + "            sum = Math.max(n, sum + n);\n"
+                + "            max = Math.max(max, sum);\n"
+                + "        }\n"
+                + "        return max;\n"
+                + "    }\n"
+                + "}";
+        com.codementor.api.service.JavaCodeValidationService.ValidationResult res = javaCodeValidationService.validateJavaSnippet(validClass);
+        org.junit.jupiter.api.Assertions.assertTrue(res.isValid());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", res.getStatus());
+    }
+
+    @Test
+    @DisplayName("JavaParser validation: Java 21 records and sealed interfaces pass syntax validation")
+    void testValidateJavaRecordAndInterface() {
+        String validRecord = "public record CandidateProfile(String id, String name, int score) {\n"
+                + "    public boolean isTopPerformer() {\n"
+                + "        return score >= 90;\n"
+                + "    }\n"
+                + "}";
+        com.codementor.api.service.JavaCodeValidationService.ValidationResult res = javaCodeValidationService.validateJavaSnippet(validRecord);
+        org.junit.jupiter.api.Assertions.assertTrue(res.isValid());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", res.getStatus());
+    }
+
+    @Test
+    @DisplayName("JavaParser validation: standalone Java method snippet without outer class passes syntax validation")
+    void testValidateStandaloneMethodSnippet() {
+        String methodCode = "public int[] twoSum(int[] nums, int target) {\n"
+                + "    Map<Integer, Integer> map = new HashMap<>();\n"
+                + "    for (int i = 0; i < nums.length; i++) {\n"
+                + "        int comp = target - nums[i];\n"
+                + "        if (map.containsKey(comp)) return new int[]{map.get(comp), i};\n"
+                + "        map.put(nums[i], i);\n"
+                + "    }\n"
+                + "    return new int[0];\n"
+                + "}";
+        com.codementor.api.service.JavaCodeValidationService.ValidationResult res = javaCodeValidationService.validateJavaSnippet(methodCode);
+        org.junit.jupiter.api.Assertions.assertTrue(res.isValid());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", res.getStatus());
+    }
+
+    @Test
+    @DisplayName("JavaParser validation: syntactically broken Java is detected as INVALID with sanitized error")
+    void testValidateBrokenJavaSyntax() {
+        String brokenJava = "public class Broken {\n"
+                + "    public void test() {\n"
+                + "        int x = 10\n" // missing semicolon
+                + "        if (x > 5 {\n" // missing closing paren
+                + "    }\n"
+                + "}";
+        com.codementor.api.service.JavaCodeValidationService.ValidationResult res = javaCodeValidationService.validateJavaSnippet(brokenJava);
+        org.junit.jupiter.api.Assertions.assertFalse(res.isValid());
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", res.getStatus());
+        org.junit.jupiter.api.Assertions.assertNotNull(res.getMessage());
+        org.junit.jupiter.api.Assertions.assertFalse(res.getMessage().contains("com.github.javaparser"));
+    }
+
+    @Test
+    @DisplayName("JavaParser language discrimination: non-Java snippets (Python, SQL, TS) are NOT_CHECKED")
+    void testNonJavaSnippetsAreNotChecked() {
+        org.junit.jupiter.api.Assertions.assertFalse(javaCodeValidationService.isJavaBlock("python", "Java", "def solve(x): return x * 2"));
+        org.junit.jupiter.api.Assertions.assertFalse(javaCodeValidationService.isJavaBlock("sql", "SQL", "SELECT id FROM users WHERE status = 1;"));
+        org.junit.jupiter.api.Assertions.assertFalse(javaCodeValidationService.isJavaBlock("typescript", "TypeScript", "const x: number = 42;"));
+    }
+
+    @Test
+    @DisplayName("AiMentorService: multiple code blocks in response are parsed, Java validated and non-Java marked NOT_CHECKED")
+    void testValidateAndEnrichMultipleCodeBlocks() {
+        String text = "Here is Java:\n```java\npublic class Greeter {\n    public String greet() { return \"Hello\"; }\n}\n```\nAnd here is SQL:\n```sql\nSELECT * FROM candidates;\n```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                text, "tencent/hy4", "SUCCESS", "Java", "Basics", null
+        );
+
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(2, response.getValidationDetails().size());
+
+        com.codementor.api.dto.JavaCodeBlockValidation block0 = response.getValidationDetails().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("java", block0.getLanguage());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", block0.getStatus());
+
+        com.codementor.api.dto.JavaCodeBlockValidation block1 = response.getValidationDetails().get(1);
+        org.junit.jupiter.api.Assertions.assertEquals("sql", block1.getLanguage());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", block1.getStatus());
+    }
+
+    @Test
+    @DisplayName("AiMentorService: response with invalid Java block is marked INVALID with parser warning")
+    void testValidateAndEnrichInvalidJavaBlock() {
+        String text = "Here is incomplete code:\n```java\npublic class Broken { int a = ; }\n```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                text, "tencent/hy4", "SUCCESS", "Java", "Basics", null
+        );
+
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertFalse(response.getValidationDetails().isEmpty());
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", response.getValidationDetails().get(0).getStatus());
+        org.junit.jupiter.api.Assertions.assertNotNull(response.getValidationDetails().get(0).getErrorMessage());
+    }
+
+    @Test
+    @DisplayName("POST /api/mentor/chat returns validationStatus and validationDetails in JSON contract")
+    void testChatEndpointReturnsValidationMetadata() throws Exception {
+        AiMentorRequest request = new AiMentorRequest(
+                "Explain the two pointer algorithm for LeetCode array questions",
+                List.of(),
+                "Java",
+                "Technical Interview Prep"
+        );
+
+        mockMvc.perform(post("/api/mentor/chat")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.validationStatus", notNullValue()))
+                .andExpect(jsonPath("$.validationDetails", notNullValue()))
+                .andExpect(jsonPath("$.validationStatus", anyOf(is("VALID"), is("INVALID"), is("NOT_CHECKED"))));
+    }
+
+    // =========================================================================
+    // FOCUSED MANUAL QA SCENARIO SUITE (Scenarios 1-8)
+    // =========================================================================
+
+    @Test
+    @DisplayName("QA Scenario 1: Valid Java class -> status is VALID with 0 errors")
+    void qaScenario1_ValidJavaClass_ReturnsValid() {
+        String validJava = "```java\n"
+                + "package com.example.service;\n\n"
+                + "import java.util.List;\n\n"
+                + "public class TaskProcessor {\n"
+                + "    private final List<String> tasks;\n"
+                + "    public TaskProcessor(List<String> tasks) {\n"
+                + "        this.tasks = tasks;\n"
+                + "    }\n"
+                + "    public int count() {\n"
+                + "        return tasks.size();\n"
+                + "    }\n"
+                + "}\n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                validJava, "tencent/hy4", "SUCCESS", "Java", "OOP", null
+        );
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(1, response.getValidationDetails().size());
+        com.codementor.api.dto.JavaCodeBlockValidation block = response.getValidationDetails().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals(0, block.getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("java", block.getLanguage());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", block.getStatus());
+        org.junit.jupiter.api.Assertions.assertFalse(block.isCorrected());
+        org.junit.jupiter.api.Assertions.assertNull(block.getErrorMessage());
+    }
+
+    @Test
+    @DisplayName("QA Scenario 2: Invalid Java method declaration -> triggers strictly one correction attempt")
+    void qaScenario2_InvalidJavaMethodDeclaration_TriggersExactlyOneCorrectionAttempt() {
+        String invalidSnippet = "```java\n"
+                + "public int computeSum(int a, int b {\n" // missing closing paren
+                + "    return a + b;\n"
+                + "}\n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                invalidSnippet, "tencent/hy4", "SUCCESS", "Java", "Basics", null
+        );
+
+        int[] attempts = new int[]{0};
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+        };
+
+        com.codementor.api.service.AiMentorService serviceWithSpy = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
+                attempts[0]++;
+                // Still returns broken code to verify loop prevention terminates after 1 attempt
+                return "public int computeSum(int a, int b { return a + b; }";
+            }
+        };
+
+        serviceWithSpy.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, attempts[0], "Correction attempt must be executed strictly once");
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", response.getValidationStatus());
+    }
+
+    @Test
+    @DisplayName("QA Scenario 3: Successfully corrected Java -> status is VALID and isCorrected is true")
+    void qaScenario3_SuccessfullyCorrectedJava_ReturnsValidAndIsCorrectedTrue() {
+        String brokenJava = "```java\n"
+                + "public int multiply(int a, int b) {\n"
+                + "    return a * b\n" // missing semicolon
+                + "}\n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                brokenJava, "tencent/hy4", "SUCCESS", "Java", "Basics", null
+        );
+
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+        };
+
+        com.codementor.api.service.AiMentorService serviceWithCorrection = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
+                return "public int multiply(int a, int b) {\n    return a * b;\n}";
+            }
+        };
+
+        serviceWithCorrection.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(1, response.getValidationDetails().size());
+        com.codementor.api.dto.JavaCodeBlockValidation block = response.getValidationDetails().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", block.getStatus());
+        org.junit.jupiter.api.Assertions.assertTrue(block.isCorrected());
+        org.junit.jupiter.api.Assertions.assertNull(block.getErrorMessage());
+        // Verify code in response was replaced with corrected code
+        org.junit.jupiter.api.Assertions.assertTrue(response.getAiResponse().contains("return a * b;"));
+    }
+
+    @Test
+    @DisplayName("QA Scenario 4: Uncorrectable Java -> status is INVALID with sanitized parse warning")
+    void qaScenario4_UncorrectableJava_ReturnsInvalidAndIsCorrectedFalse() {
+        String severelyBroken = "```java\n"
+                + "class ??? { @@! \n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                severelyBroken, "tencent/hy4", "SUCCESS", "Java", "Basics", null
+        );
+
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+        };
+
+        com.codementor.api.service.AiMentorService serviceFailedCorrection = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
+                // LLM unable to fix or returns unparseable text
+                return "Still completely broken @@! code";
+            }
+        };
+
+        serviceFailedCorrection.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(1, response.getValidationDetails().size());
+        com.codementor.api.dto.JavaCodeBlockValidation block = response.getValidationDetails().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", block.getStatus());
+        org.junit.jupiter.api.Assertions.assertFalse(block.isCorrected());
+        org.junit.jupiter.api.Assertions.assertNotNull(block.getErrorMessage());
+    }
+
+    @Test
+    @DisplayName("QA Scenario 5: Python code -> marked NOT_CHECKED and never sent to JavaParser")
+    void qaScenario5_PythonCode_ReturnsNotChecked() {
+        String pyResponse = "Here is the solution in Python:\n"
+                + "```python\n"
+                + "def two_sum(nums, target):\n"
+                + "    lookup = {}\n"
+                + "    for i, num in enumerate(nums):\n"
+                + "        diff = target - num\n"
+                + "        if diff in lookup:\n"
+                + "            return [lookup[diff], i]\n"
+                + "        lookup[num] = i\n"
+                + "    return []\n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                pyResponse, "tencent/hy4", "SUCCESS", "Python", "Algorithms", null
+        );
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "Python");
+
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(1, response.getValidationDetails().size());
+        com.codementor.api.dto.JavaCodeBlockValidation block = response.getValidationDetails().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("python", block.getLanguage());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", block.getStatus());
+        org.junit.jupiter.api.Assertions.assertFalse(block.isCorrected());
+        org.junit.jupiter.api.Assertions.assertNull(block.getErrorMessage());
+    }
+
+    @Test
+    @DisplayName("QA Scenario 6: SQL code -> marked NOT_CHECKED and never sent to JavaParser")
+    void qaScenario6_SqlCode_ReturnsNotChecked() {
+        String sqlResponse = "Here is the database schema:\n"
+                + "```sql\n"
+                + "CREATE TABLE candidate_skills (\n"
+                + "    id BIGSERIAL PRIMARY KEY,\n"
+                + "    user_id BIGINT NOT NULL,\n"
+                + "    skill_name VARCHAR(64) NOT NULL\n"
+                + ");\n"
+                + "CREATE INDEX idx_user ON candidate_skills(user_id);\n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                sqlResponse, "tencent/hy4", "SUCCESS", "SQL", "Databases", null
+        );
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "SQL");
+
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(1, response.getValidationDetails().size());
+        com.codementor.api.dto.JavaCodeBlockValidation block = response.getValidationDetails().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("sql", block.getLanguage());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", block.getStatus());
+    }
+
+    @Test
+    @DisplayName("QA Scenario 7: Multiple Java code blocks -> each block receives its own distinct status")
+    void qaScenario7_MultipleJavaCodeBlocks_EachBlockReceivesDistinctStatus() {
+        String multiBlockMarkdown = "### Block 0: Valid Interface\n"
+                + "```java\n"
+                + "public interface Calculator {\n"
+                + "    int calculate(int a, int b);\n"
+                + "}\n"
+                + "```\n\n"
+                + "### Block 1: Broken Syntax\n"
+                + "```java\n"
+                + "public class Incomplete {\n"
+                + "    int x = \n"
+                + "}\n"
+                + "```\n\n"
+                + "### Block 2: Valid Record\n"
+                + "```java\n"
+                + "public record Point(int x, int y) {}\n"
+                + "```";
+
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                multiBlockMarkdown, "tencent/hy4", "SUCCESS", "Java", "OOP", null
+        );
+
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        // Overall status is INVALID because Block 1 has parse error
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(3, response.getValidationDetails().size());
+
+        // Block 0: Valid interface
+        com.codementor.api.dto.JavaCodeBlockValidation block0 = response.getValidationDetails().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals(0, block0.getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", block0.getStatus());
+
+        // Block 1: Broken syntax
+        com.codementor.api.dto.JavaCodeBlockValidation block1 = response.getValidationDetails().get(1);
+        org.junit.jupiter.api.Assertions.assertEquals(1, block1.getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", block1.getStatus());
+        org.junit.jupiter.api.Assertions.assertNotNull(block1.getErrorMessage());
+
+        // Block 2: Valid record
+        com.codementor.api.dto.JavaCodeBlockValidation block2 = response.getValidationDetails().get(2);
+        org.junit.jupiter.api.Assertions.assertEquals(2, block2.getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", block2.getStatus());
+    }
+
+    @Test
+    @DisplayName("QA Scenario 8: Existing OpenRouter reasoning protection remains fully intact")
+    void qaScenario8_ReasoningProtectionRemainsIntact() throws Exception {
+        // 1. Internal reasoning in message.reasoning is NEVER exposed
+        String reasoningJson = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":null,\"reasoning\":\"Internal chain of thought: plan step 1...\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode root1 = objectMapper.readTree(reasoningJson);
+        String extracted1 = aiMentorService.extractContentFromOpenRouterResponse(root1);
+        org.junit.jupiter.api.Assertions.assertNull(extracted1, "Internal reasoning must never be extracted as content");
+
+        // 2. Embedded <think> tags are stripped from output
+        String thinkJson = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"<think>internal thought</think>Actual user answer\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode root2 = objectMapper.readTree(thinkJson);
+        String extracted2 = aiMentorService.extractContentFromOpenRouterResponse(root2);
+        org.junit.jupiter.api.Assertions.assertEquals("Actual user answer", extracted2);
+
+        // 3. Response with only thinking tags returns null to trigger fallback
+        String thinkOnlyJson = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"<think>only thoughts</think>\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode root3 = objectMapper.readTree(thinkOnlyJson);
+        String extracted3 = aiMentorService.extractContentFromOpenRouterResponse(root3);
+        org.junit.jupiter.api.Assertions.assertNull(extracted3);
     }
 }

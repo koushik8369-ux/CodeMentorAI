@@ -18,6 +18,8 @@ import {
   Layers,
   BookOpen,
   AlertCircle,
+  AlertTriangle,
+  CheckCircle2,
   HelpCircle,
   RotateCcw,
   Compass,
@@ -190,6 +192,9 @@ Choose a quick starter topic above or type any coding question or snippet below!
         status: resolvedStatus,
         language: res.programmingLanguage,
         context: res.learningContext,
+        validationStatus: res.validationStatus,
+        validationDetails: res.validationDetails,
+        validationSummary: res.validationSummary,
       };
 
       setMessages((prev) => [...prev, assistantMsg]);
@@ -257,7 +262,8 @@ Choose a quick starter topic above or type any coding question or snippet below!
   };
 
   // Helper to render markdown content with syntax codeblocks & copy buttons
-  const renderMessageContent = (content: string, messageId: string) => {
+  const renderMessageContent = (msg: AiMentorMessage) => {
+    const { content, id: messageId, validationDetails } = msg;
     if (!content || typeof content !== 'string') {
       return (
         <p className="text-amber-300 text-sm italic">
@@ -280,9 +286,12 @@ Choose a quick starter topic above or type any coding question or snippet below!
     }
 
     const parts = sanitized.split(/(```[\s\S]*?```)/g);
+    let codeBlockIndex = 0;
 
     return parts.map((part, index) => {
       if (part.startsWith('```') && part.endsWith('```')) {
+        const currentBlockIdx = codeBlockIndex++;
+        const validation = validationDetails?.find((v) => v.blockIndex === currentBlockIdx);
         const lines = part.slice(3, -3).trim().split('\n');
         const firstLine = lines[0].trim();
         const codeLang = firstLine && !firstLine.includes(' ') ? firstLine : 'code';
@@ -295,12 +304,40 @@ Choose a quick starter topic above or type any coding question or snippet below!
             className="my-3 rounded-xl border border-slate-800 bg-slate-950 overflow-hidden font-mono text-xs shadow-md"
           >
             <div className="flex items-center justify-between px-3 py-1.5 bg-slate-900 border-b border-slate-800/80 text-slate-400">
-              <span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">
-                {codeLang}
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold text-indigo-400 uppercase tracking-wider">
+                  {codeLang}
+                </span>
+                {validation && validation.status === 'VALID' && (
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                    title={validation.validationSummary || 'Java syntax parsed and verified using JavaParser (Java 21 grammar)'}
+                  >
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span>{validation.isCorrected ? 'Syntax Repaired (Java 21)' : 'Syntax Validated (Java 21)'}</span>
+                  </span>
+                )}
+                {validation && validation.status === 'INVALID' && (
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                    title={validation.errorMessage || validation.validationSummary || 'JavaParser detected syntax errors'}
+                  >
+                    <AlertTriangle className="w-3 h-3 text-amber-400" />
+                    <span>Syntax Warning: Parse issues</span>
+                  </span>
+                )}
+                {validation && validation.status === 'NOT_CHECKED' && (
+                  <span
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800/60 text-slate-400 border border-slate-700/60"
+                    title="Syntax validation applies specifically to Java snippets"
+                  >
+                    <span>Syntax check: N/A</span>
+                  </span>
+                )}
+              </div>
               <button
                 onClick={() => copyToClipboard(codeText, codeBlockId)}
-                className="flex items-center gap-1 text-[11px] hover:text-white transition-colors"
+                className="flex items-center gap-1 text-[11px] hover:text-white transition-colors cursor-pointer"
               >
                 {copiedId === codeBlockId ? (
                   <>
@@ -315,6 +352,20 @@ Choose a quick starter topic above or type any coding question or snippet below!
                 )}
               </button>
             </div>
+            {validation && validation.isCorrected && (
+              <div className="px-3 py-1 bg-emerald-950/20 border-b border-emerald-500/20 text-emerald-300 text-[11px] flex items-center gap-1.5 font-sans">
+                <Check className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span>Automatically repaired and validated against Java 21 syntax grammar.</span>
+              </div>
+            )}
+            {validation && validation.status === 'INVALID' && validation.errorMessage && (
+              <div className="px-3 py-1.5 bg-amber-950/30 border-b border-amber-500/20 text-amber-300 text-[11px] flex items-center gap-1.5 font-sans">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="truncate" title={validation.errorMessage}>
+                  Syntax Notice: {validation.errorMessage}
+                </span>
+              </div>
+            )}
             <pre className="p-4 overflow-x-auto text-slate-200 leading-relaxed font-mono">
               <code>{codeText}</code>
             </pre>
@@ -500,8 +551,22 @@ Choose a quick starter topic above or type any coding question or snippet below!
 
                   {/* Message Body */}
                   <div className="space-y-1">
-                    {renderMessageContent(msg.content, msg.id)}
+                    {renderMessageContent(msg)}
                   </div>
+
+                  {/* Java Syntax Validation Summary */}
+                  {msg.validationStatus === 'VALID' && (
+                    <div className="mt-2.5 text-[11px] text-emerald-400/90 flex items-center gap-1.5 font-mono">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span>{msg.validationSummary || 'All Java code snippets validated successfully against Java 21 syntax grammar.'}</span>
+                    </div>
+                  )}
+                  {msg.validationStatus === 'INVALID' && (
+                    <div className="mt-2.5 text-[11px] text-amber-400/90 flex items-center gap-1.5 font-mono">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>{msg.validationSummary || 'One or more Java code snippets contain syntax parse issues.'}</span>
+                    </div>
+                  )}
 
                   {/* Fallback Notice if active */}
                   {msg.status === 'FALLBACK' && (
