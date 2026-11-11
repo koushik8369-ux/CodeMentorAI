@@ -1,6 +1,0 @@
-{
-  "summary": "V1.6 Architectural Migration Plan for CodeMentor AI: Detailed roadmap to transition the platform into a completely database-free architecture, preserving React + Vite + TypeScript frontend, Java 21 + Spring Boot backend, and Gemini AI integration, while replacing PostgreSQL with a typed browser localStorage engine and introducing local demo-profile authentication.",
-  "updatedAt": "2026-11-02T15:55:22.083508651Z",
-  "requestFeedback": true,
-  "userFacing": true
-}

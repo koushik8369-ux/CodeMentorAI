@@ -457,7 +457,7 @@ export const api = {
     };
   },
 
-  async getMentorStatus(): Promise<{ service: string; provider: string; defaultModel: string; isConfigured: boolean; status: string }> {
+  async getMentorStatus(): Promise<{ service: string; provider: string; defaultModel: string; fallbackModel?: string; isConfigured: boolean; status: string }> {
     try {
       const res = await fetch(`${API_BASE}/mentor/status`);
       if (!res.ok) throw new Error('Status error');
@@ -467,6 +467,7 @@ export const api = {
         service: 'CodeMentor AI Programming Mentor Agent',
         provider: 'OpenRouter API',
         defaultModel: 'tencent/hy4',
+        fallbackModel: 'deepseek/deepseek-chat',
         isConfigured: false,
         status: 'UP',
       };

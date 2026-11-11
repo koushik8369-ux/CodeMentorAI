@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -774,5 +775,220 @@ public class AiMentorTests {
         com.fasterxml.jackson.databind.JsonNode root3 = objectMapper.readTree(thinkOnlyJson);
         String extracted3 = aiMentorService.extractContentFromOpenRouterResponse(root3);
         org.junit.jupiter.api.Assertions.assertNull(extracted3);
+    }
+
+    // =========================================================================
+    // HTTP 502 PROVIDER FAILURE & ALTERNATIVE MODEL FAILOVER SUITE
+    // =========================================================================
+
+    @Test
+    @DisplayName("Failover: Tencent HTTP 502 followed by successful alternative model response")
+    void testTencent502FollowedBySuccessfulAlternativeModelResponse() {
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+            @Override
+            public String getDefaultModel() {
+                return "tencent/hy4";
+            }
+            @Override
+            public String getFallbackModel() {
+                return "deepseek/deepseek-chat";
+            }
+        };
+
+        List<String> invokedModels = new ArrayList<>();
+        com.codementor.api.service.AiMentorService service = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
+                invokedModels.add(model);
+                if ("tencent/hy4".equalsIgnoreCase(model)) {
+                    throw new OpenRouterApiException(502, "Bad Gateway from Tencent provider");
+                }
+                if ("deepseek/deepseek-chat".equalsIgnoreCase(model)) {
+                    return "Here is the solution from DeepSeek:\n```java\npublic class Solution { public int solve() { return 42; } }\n```";
+                }
+                return "Other answer";
+            }
+        };
+
+        AiMentorRequest request = new AiMentorRequest("How to solve two sum?", List.of(), "Java", "DSA");
+        com.codementor.api.dto.AiMentorResponse response = service.chatWithMentor(request);
+
+        org.junit.jupiter.api.Assertions.assertEquals("SUCCESS", response.getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("deepseek/deepseek-chat", response.getSelectedModel(), "Actual succeeded model must be returned");
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("tencent/hy4", "deepseek/deepseek-chat"), invokedModels);
+        org.junit.jupiter.api.Assertions.assertTrue(response.getNotice().contains("tencent/hy4"));
+        org.junit.jupiter.api.Assertions.assertTrue(response.getNotice().contains("deepseek/deepseek-chat"));
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationStatus());
+    }
+
+    @Test
+    @DisplayName("Failover: Both primary and alternative model returning HTTP 502 yields service unavailable")
+    void testBothModelsReturningHttp502() {
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+            @Override
+            public String getDefaultModel() {
+                return "tencent/hy4";
+            }
+            @Override
+            public String getFallbackModel() {
+                return "deepseek/deepseek-chat";
+            }
+        };
+
+        List<String> invokedModels = new ArrayList<>();
+        com.codementor.api.service.AiMentorService service = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
+                invokedModels.add(model);
+                throw new OpenRouterApiException(502, "Bad Gateway from provider " + model);
+            }
+        };
+
+        AiMentorRequest request = new AiMentorRequest("Explain B-Trees", List.of(), "SQL", "Databases");
+        com.codementor.api.dto.AiMentorResponse response = service.chatWithMentor(request);
+
+        org.junit.jupiter.api.Assertions.assertEquals("FALLBACK", response.getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("tencent/hy4", "deepseek/deepseek-chat"), invokedModels);
+        org.junit.jupiter.api.Assertions.assertTrue(response.getSelectedModel().contains("Unavailable"));
+        org.junit.jupiter.api.Assertions.assertTrue(response.getAiResponse().contains("AI Mentor Service Temporarily Unavailable"));
+        org.junit.jupiter.api.Assertions.assertFalse(response.getAiResponse().contains("PaymentService"), "Must not present canned DI heuristic as answer");
+    }
+
+    @Test
+    @DisplayName("Failover: HTTP 401 Unauthorized must not trigger alternative model retry")
+    void testHttp401WithoutRetry() {
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+            @Override
+            public String getDefaultModel() {
+                return "tencent/hy4";
+            }
+            @Override
+            public String getFallbackModel() {
+                return "deepseek/deepseek-chat";
+            }
+        };
+
+        List<String> invokedModels = new ArrayList<>();
+        com.codementor.api.service.AiMentorService service = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
+                invokedModels.add(model);
+                throw new OpenRouterApiException(401, "User key unauthorized or expired");
+            }
+        };
+
+        AiMentorRequest request = new AiMentorRequest("How to use Spring?", List.of(), "Java", "Spring");
+        com.codementor.api.dto.AiMentorResponse response = service.chatWithMentor(request);
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, invokedModels.size(), "HTTP 401 must never be retried");
+        org.junit.jupiter.api.Assertions.assertEquals("tencent/hy4", invokedModels.get(0));
+        org.junit.jupiter.api.Assertions.assertEquals("FALLBACK", response.getStatus());
+    }
+
+    @Test
+    @DisplayName("Failover: Strict loop prevention allows at most ONE fallback attempt")
+    void testNoMoreThanOneFallbackAttempt() {
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+            @Override
+            public String getDefaultModel() {
+                return "tencent/hy4";
+            }
+            @Override
+            public String getFallbackModel() {
+                return "deepseek/deepseek-chat";
+            }
+        };
+
+        List<String> attempts = new ArrayList<>();
+        com.codementor.api.service.AiMentorService service = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
+                attempts.add(model);
+                throw new OpenRouterApiException(502, "Provider 502 outage");
+            }
+        };
+
+        AiMentorRequest request = new AiMentorRequest("Explain concurrency", List.of(), "Java", "Threading");
+        service.chatWithMentor(request);
+
+        org.junit.jupiter.api.Assertions.assertEquals(2, attempts.size(), "Strict limit of at most one fallback attempt");
+        org.junit.jupiter.api.Assertions.assertEquals("tencent/hy4", attempts.get(0));
+        org.junit.jupiter.api.Assertions.assertEquals("deepseek/deepseek-chat", attempts.get(1));
+    }
+
+    @Test
+    @DisplayName("Failover: Fallback model response never exposes reasoning fields")
+    void testFallbackModelReasoningFieldsNeverExposed() throws Exception {
+        String fallbackResponseWithReasoning = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"User facing answer from fallback model\",\"reasoning\":\"Internal thoughts from DeepSeek\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode root = objectMapper.readTree(fallbackResponseWithReasoning);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(root);
+
+        org.junit.jupiter.api.Assertions.assertEquals("User facing answer from fallback model", extracted);
+        org.junit.jupiter.api.Assertions.assertFalse(extracted.contains("Internal thoughts"));
+    }
+
+    @Test
+    @DisplayName("Failover: JavaParser validation still executes on fallback model output")
+    void testJavaParserValidationStillWorksOnFallbackModelOutput() {
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+            @Override
+            public String getDefaultModel() {
+                return "tencent/hy4";
+            }
+            @Override
+            public String getFallbackModel() {
+                return "deepseek/deepseek-chat";
+            }
+        };
+
+        com.codementor.api.service.AiMentorService service = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
+                if ("tencent/hy4".equalsIgnoreCase(model)) {
+                    throw new OpenRouterApiException(502, "Tencent 502 Bad Gateway");
+                }
+                return "Here is the code:\n```java\npublic class FallbackResult {\n    public String getStatus() { return \"OK\"; }\n}\n```";
+            }
+        };
+
+        AiMentorRequest request = new AiMentorRequest("Generate class", List.of(), "Java", "Basics");
+        com.codementor.api.dto.AiMentorResponse response = service.chatWithMentor(request);
+
+        org.junit.jupiter.api.Assertions.assertEquals("SUCCESS", response.getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("deepseek/deepseek-chat", response.getSelectedModel());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(1, response.getValidationDetails().size());
+        org.junit.jupiter.api.Assertions.assertEquals("java", response.getValidationDetails().get(0).getLanguage());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationDetails().get(0).getStatus());
     }
 }

@@ -12,6 +12,9 @@ public class OpenRouterConfig {
     @Value("${openrouter.api.model:tencent/hy4}")
     private String defaultModel;
 
+    @Value("${openrouter.fallback.model:deepseek/deepseek-chat}")
+    private String fallbackModel;
+
     @Value("${openrouter.api.url:https://openrouter.ai/api/v1/chat/completions}")
     private String apiUrl;
 
@@ -27,6 +30,12 @@ public class OpenRouterConfig {
         return defaultModel != null && !defaultModel.trim().isBlank()
                 ? defaultModel.trim()
                 : "tencent/hy4";
+    }
+
+    public String getFallbackModel() {
+        return fallbackModel != null && !fallbackModel.trim().isBlank()
+                ? fallbackModel.trim()
+                : "deepseek/deepseek-chat";
     }
 
     public String getApiUrl() {

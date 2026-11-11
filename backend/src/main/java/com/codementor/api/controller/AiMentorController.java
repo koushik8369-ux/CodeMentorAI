@@ -31,6 +31,7 @@ public class AiMentorController {
                 "service", "CodeMentor AI Programming Mentor Agent",
                 "provider", "OpenRouter API",
                 "defaultModel", aiMentorService.resolveModel(null),
+                "fallbackModel", aiMentorService.getFallbackModel(),
                 "isConfigured", aiMentorService.isConfigured(),
                 "status", "UP"
         ));

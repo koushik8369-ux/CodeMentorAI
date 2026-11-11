@@ -43,7 +43,10 @@ public class AiMentorService {
     }
 
     public AiMentorResponse chatWithMentor(AiMentorRequest request) {
-        String model = resolveModel(request.getCustomModel());
+        String primaryModel = resolveModel(request.getCustomModel());
+        String alternativeModel = resolveAlternativeModel(primaryModel);
+        String actualModel = primaryModel;
+
         String lang = request.getProgrammingLanguage() != null && !request.getProgrammingLanguage().isBlank()
                 ? request.getProgrammingLanguage().trim()
                 : "General / Polyglot";
@@ -52,34 +55,77 @@ public class AiMentorService {
                 : "Full-Stack Software Engineering";
 
         String lastErrorNotice = null;
+        String primaryErrorNotice = null;
+        boolean primaryFailedWith502 = false;
+        boolean allProvidersFailed = false;
+
         if (openRouterConfig.isApiKeyConfigured()) {
+            String aiText = null;
             try {
-                String aiText = callOpenRouterApi(request, model, lang, context);
-                if (aiText != null && !aiText.isBlank() && !"null".equalsIgnoreCase(aiText.trim())) {
-                    AiMentorResponse response = new AiMentorResponse(aiText.trim(), model, "SUCCESS", lang, context, null);
-                    validateAndEnrichResponse(response, model, lang);
-                    return response;
-                }
+                aiText = callOpenRouterApi(request, primaryModel, lang, context);
             } catch (OpenRouterApiException e) {
-                lastErrorNotice = "Upstream OpenRouter error (HTTP " + e.getStatusCode() + ": " + e.getResponseSummary() + "). Heuristic mentor response provided.";
-                logger.warn("OpenRouter API error (HTTP {}): {}. Falling back to heuristic mentor response.", e.getStatusCode(), e.getResponseSummary());
+                primaryErrorNotice = "Upstream OpenRouter error for " + primaryModel + " (HTTP " + e.getStatusCode() + ": " + e.getResponseSummary() + ").";
+                logger.warn("OpenRouter API error for model {} (HTTP {}): {}", primaryModel, e.getStatusCode(), e.getResponseSummary());
+                if (isRetryableProviderFailure(e.getStatusCode())) {
+                    primaryFailedWith502 = true;
+                } else {
+                    allProvidersFailed = true;
+                    lastErrorNotice = primaryErrorNotice;
+                }
             } catch (Exception e) {
                 String safeMsg = redactSecrets(e.getMessage());
-                lastErrorNotice = "OpenRouter API call failed (" + safeMsg + "). Heuristic mentor response provided.";
-                logger.warn("OpenRouter API call encountered an error: {}. Falling back to heuristic mentor response.", safeMsg);
+                primaryErrorNotice = "OpenRouter API call failed for " + primaryModel + " (" + safeMsg + ").";
+                logger.warn("OpenRouter API call encountered an error for model {}: {}", primaryModel, safeMsg);
+                allProvidersFailed = true;
+                lastErrorNotice = primaryErrorNotice;
+            }
+
+            // If primary model returned a retryable provider failure (HTTP 502/503/504), retry at most once with alternative model
+            if (primaryFailedWith502 && alternativeModel != null && !alternativeModel.equalsIgnoreCase(primaryModel)) {
+                logger.info("Primary model '{}' experienced provider failure (HTTP 502). Retrying once with alternative model '{}'",
+                        primaryModel, alternativeModel);
+                try {
+                    aiText = callOpenRouterApi(request, alternativeModel, lang, context);
+                    actualModel = alternativeModel;
+                } catch (OpenRouterApiException e2) {
+                    logger.warn("Alternative model '{}' also failed (HTTP {}): {}",
+                            alternativeModel, e2.getStatusCode(), e2.getResponseSummary());
+                    lastErrorNotice = primaryErrorNotice + " Alternative model " + alternativeModel + " also failed (HTTP " + e2.getStatusCode() + ": " + e2.getResponseSummary() + ").";
+                    allProvidersFailed = true;
+                } catch (Exception e2) {
+                    String safeMsg2 = redactSecrets(e2.getMessage());
+                    logger.warn("Alternative model '{}' failed: {}", alternativeModel, safeMsg2);
+                    lastErrorNotice = primaryErrorNotice + " Alternative model " + alternativeModel + " failed (" + safeMsg2 + ").";
+                    allProvidersFailed = true;
+                }
+            }
+
+            // If we successfully received AI content from primary or alternative model:
+            if (aiText != null && !aiText.isBlank() && !"null".equalsIgnoreCase(aiText.trim())) {
+                String notice = !actualModel.equalsIgnoreCase(primaryModel)
+                        ? "Primary model " + primaryModel + " returned provider failure (HTTP 502). Successfully failed over to " + actualModel + "."
+                        : null;
+                AiMentorResponse response = new AiMentorResponse(aiText.trim(), actualModel, "SUCCESS", lang, context, notice);
+                validateAndEnrichResponse(response, actualModel, lang);
+                return response;
+            }
+
+            if (allProvidersFailed) {
+                // Return a clear service-unavailable response rather than presenting a canned heuristic response as a successful AI answer
+                String unavailableText = buildServiceUnavailableResponse(primaryModel, alternativeModel, lastErrorNotice);
+                String notice = lastErrorNotice != null ? lastErrorNotice : "Upstream AI providers unavailable. Service-unavailable response provided.";
+                AiMentorResponse unavailableResponse = new AiMentorResponse(unavailableText, primaryModel + " (Unavailable)", "FALLBACK", lang, context, notice);
+                validateAndEnrichResponse(unavailableResponse, primaryModel, lang);
+                return unavailableResponse;
             }
         }
 
-        // Graceful fallback response when OPENROUTER_API_KEY is not configured or upstream fails
+        // Graceful fallback response when OPENROUTER_API_KEY is not configured (offline / local development)
         String fallbackAnswer = generateFallbackMentorResponse(request.getMessage(), lang, context);
-        String notice = lastErrorNotice != null
-                ? lastErrorNotice
-                : (openRouterConfig.isApiKeyConfigured()
-                    ? "OpenRouter API response unavailable. Heuristic mentor response provided."
-                    : "OpenRouter API key not detected in backend environment. To enable live LLM generation, set OPENROUTER_API_KEY in Render environment variables.");
+        String notice = "OpenRouter API key not detected in backend environment. To enable live LLM generation, set OPENROUTER_API_KEY in Render environment variables.";
 
-        AiMentorResponse fallbackResponse = new AiMentorResponse(fallbackAnswer, model + " (Fallback Heuristic)", "FALLBACK", lang, context, notice);
-        validateAndEnrichResponse(fallbackResponse, model, lang);
+        AiMentorResponse fallbackResponse = new AiMentorResponse(fallbackAnswer, primaryModel + " (Fallback Heuristic)", "FALLBACK", lang, context, notice);
+        validateAndEnrichResponse(fallbackResponse, primaryModel, lang);
         return fallbackResponse;
     }
 
@@ -112,6 +158,43 @@ public class AiMentorService {
             }
         }
         return openRouterConfig.getDefaultModel();
+    }
+
+    public boolean isRetryableProviderFailure(int statusCode) {
+        // HTTP 502 (Bad Gateway), HTTP 503 (Service Unavailable), HTTP 504 (Gateway Timeout)
+        return statusCode == 502 || statusCode == 503 || statusCode == 504;
+    }
+
+    public String getFallbackModel() {
+        return openRouterConfig.getFallbackModel();
+    }
+
+    public String resolveAlternativeModel(String primaryModel) {
+        String configuredFallback = openRouterConfig.getFallbackModel();
+        if (configuredFallback != null && !configuredFallback.isBlank() && !configuredFallback.equalsIgnoreCase(primaryModel)) {
+            return configuredFallback.trim();
+        }
+        if ("deepseek/deepseek-chat".equalsIgnoreCase(primaryModel)) {
+            return "meta-llama/llama-3.3-70b-instruct";
+        }
+        if ("tencent/hy4".equalsIgnoreCase(primaryModel)) {
+            return "deepseek/deepseek-chat";
+        }
+        return "deepseek/deepseek-chat";
+    }
+
+    public String buildServiceUnavailableResponse(String primaryModel, String alternativeModel, String errorNotice) {
+        String models = (alternativeModel != null && !alternativeModel.equalsIgnoreCase(primaryModel))
+                ? primaryModel + " and alternative model " + alternativeModel
+                : primaryModel;
+
+        return "### ⚠️ AI Mentor Service Temporarily Unavailable\n\n"
+                + "The upstream AI provider (" + models + ") encountered a temporary provider outage (HTTP 502 / Bad Gateway).\n\n"
+                + "Our resilience pipeline automatically attempted to route your request to an alternative verified model, but all upstream providers are currently reporting downtime.\n\n"
+                + "**What you can do:**\n"
+                + "- **Retry shortly**: Upstream OpenRouter gateway errors are usually transient and recover quickly.\n"
+                + "- **Switch Models**: Use the model selector in the top bar to try another verified model (e.g., **DeepSeek V3**, **Llama 3.3 70B**, or **GPT-4o Mini**).\n"
+                + "- **Practice & Review**: In the meantime, you can review your saved conversation history, inspect previous interview questions, or take a mock interview.";
     }
 
     public boolean isConfigured() {
@@ -197,7 +280,7 @@ public class AiMentorService {
         return payload;
     }
 
-    private String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
+    public String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
         boolean tryWithReasoning = isReasoningEffortSupported(model);
         Map<String, Object> payload = buildRequestPayload(request, model, lang, context, tryWithReasoning);
         String jsonBody = objectMapper.writeValueAsString(payload);

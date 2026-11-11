@@ -108,6 +108,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [backendConfig, setBackendConfig] = useState<{
     defaultModel: string;
+    fallbackModel?: string;
     isConfigured: boolean;
     provider: string;
   } | null>(null);
@@ -119,6 +120,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
       .then((status) => {
         setBackendConfig({
           defaultModel: status.defaultModel,
+          fallbackModel: status.fallbackModel,
           isConfigured: status.isConfigured,
           provider: status.provider,
         });
