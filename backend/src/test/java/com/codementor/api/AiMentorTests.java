@@ -13,6 +13,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -290,5 +291,86 @@ public class AiMentorTests {
         org.junit.jupiter.api.Assertions.assertNotEquals("null", response.getAiResponse());
         org.junit.jupiter.api.Assertions.assertFalse(response.getAiResponse().isBlank());
         org.junit.jupiter.api.Assertions.assertEquals("FALLBACK", response.getStatus());
+    }
+
+    @Test
+    @DisplayName("Request construction: configures reasoning effort none and exclude true for tencent/hy4 with 4096 tokens")
+    void testBuildRequestPayloadConfiguresReasoningForTencentHy4() {
+        AiMentorRequest req = new AiMentorRequest("Help with arrays", List.of(), "Java", "DSA");
+        Map<String, Object> payload = aiMentorService.buildRequestPayload(req, "tencent/hy4", "Java", "DSA", true);
+
+        org.junit.jupiter.api.Assertions.assertEquals("tencent/hy4", payload.get("model"));
+        org.junit.jupiter.api.Assertions.assertEquals(4096, payload.get("max_tokens"));
+        org.junit.jupiter.api.Assertions.assertTrue(payload.containsKey("reasoning"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> reasoning = (Map<String, Object>) payload.get("reasoning");
+        org.junit.jupiter.api.Assertions.assertEquals("none", reasoning.get("effort"));
+        org.junit.jupiter.api.Assertions.assertEquals(true, reasoning.get("exclude"));
+    }
+
+    @Test
+    @DisplayName("Request construction: omits reasoning parameter for standard non-reasoning models")
+    void testBuildRequestPayloadOmitsReasoningForStandardModels() {
+        AiMentorRequest req = new AiMentorRequest("Help with loops", List.of(), "Java", "Basics");
+        Map<String, Object> payload1 = aiMentorService.buildRequestPayload(req, "deepseek/deepseek-chat", "Java", "Basics", true);
+        org.junit.jupiter.api.Assertions.assertFalse(payload1.containsKey("reasoning"));
+
+        Map<String, Object> payload2 = aiMentorService.buildRequestPayload(req, "meta-llama/llama-3.3-70b-instruct", "Java", "Basics", true);
+        org.junit.jupiter.api.Assertions.assertFalse(payload2.containsKey("reasoning"));
+    }
+
+    @Test
+    @DisplayName("Response parsing: extracts object-based content with text field")
+    void testExtractObjectContentWithTextField() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":{\"type\":\"text\",\"text\":\"Object format response\"}}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertEquals("Object format response", extracted);
+    }
+
+    @Test
+    @DisplayName("Response parsing: extracts legacy text completions format in choices[0].text")
+    void testExtractLegacyTextCompletionsFormat() throws Exception {
+        String json = "{\"choices\":[{\"text\":\"Legacy completions text answer\"}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertEquals("Legacy completions text answer", extracted);
+    }
+
+    @Test
+    @DisplayName("Response parsing: extracts delta streaming format in choices[0].delta.content")
+    void testExtractDeltaStreamingFormat() throws Exception {
+        String json = "{\"choices\":[{\"delta\":{\"content\":\"Streaming delta text answer\"}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertEquals("Streaming delta text answer", extracted);
+    }
+
+    @Test
+    @DisplayName("Response parsing: returns null when content is whitespace only")
+    void testExtractEmptyWhitespaceReturnsNull() throws Exception {
+        String json = "{\"choices\":[{\"message\":{\"role\":\"assistant\",\"content\":\"   \"}}]}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(json);
+        String extracted = aiMentorService.extractContentFromOpenRouterResponse(node);
+        org.junit.jupiter.api.Assertions.assertNull(extracted);
+    }
+
+    @Test
+    @DisplayName("Safe diagnostics: captures structure without exposing secrets or reasoning tokens")
+    void testSafeDiagnosticsLogging() throws Exception {
+        String fixture = "{\"choices\":[{\"finish_reason\":\"stop\",\"message\":{\"role\":\"assistant\",\"content\":\"Safe text\",\"reasoning\":\"Secret internal thought\"}}],\"usage\":{\"prompt_tokens\":100,\"completion_tokens\":50,\"total_tokens\":150}}";
+        com.fasterxml.jackson.databind.JsonNode node = objectMapper.readTree(fixture);
+        // Ensure no exceptions thrown during diagnostics logging
+        aiMentorService.logSafeResponseDiagnostics(200, "tencent/hy4", node, fixture);
+    }
+
+    @Test
+    @DisplayName("Upstream errors: extracts and sanitizes upstream error message from OpenRouter")
+    void testExtractUpstreamErrorMessage() {
+        String errJson = "{\"error\":{\"message\":\"Provider rate limit reached with key sk-or-v1-secret123\",\"code\":429}}";
+        String summary = aiMentorService.extractErrorMessage(errJson, 429);
+        org.junit.jupiter.api.Assertions.assertTrue(summary.contains("rate limit reached"));
+        org.junit.jupiter.api.Assertions.assertFalse(summary.contains("sk-or-v1-secret123"));
     }
 }

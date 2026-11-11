@@ -120,7 +120,7 @@ public class AiMentorService {
         return sanitized;
     }
 
-    private String extractErrorMessage(String rawBody, int statusCode) {
+    public String extractErrorMessage(String rawBody, int statusCode) {
         if (rawBody == null || rawBody.isBlank()) {
             return "No response body returned from upstream";
         }
@@ -140,7 +140,13 @@ public class AiMentorService {
         return redactSecrets(truncated);
     }
 
-    private String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
+    public boolean isReasoningEffortSupported(String model) {
+        if (model == null) return false;
+        String m = model.toLowerCase().trim();
+        return m.startsWith("tencent/hy4") || m.startsWith("tencent/hy3") || m.contains("hunyuan");
+    }
+
+    public Map<String, Object> buildRequestPayload(AiMentorRequest request, String model, String lang, String context, boolean includeReasoning) {
         String systemPrompt = buildSystemPrompt(lang, context);
 
         List<Map<String, String>> messages = new ArrayList<>();
@@ -165,9 +171,22 @@ public class AiMentorService {
         Map<String, Object> payload = new HashMap<>();
         payload.put("model", model);
         payload.put("messages", messages);
-        payload.put("temperature", 0.4);
-        payload.put("max_tokens", 2500);
+        payload.put("temperature", 0.3);
+        payload.put("max_tokens", 4096);
 
+        if (includeReasoning && isReasoningEffortSupported(model)) {
+            Map<String, Object> reasoning = new HashMap<>();
+            reasoning.put("effort", "none");
+            reasoning.put("exclude", true);
+            payload.put("reasoning", reasoning);
+        }
+
+        return payload;
+    }
+
+    private String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) throws Exception {
+        boolean tryWithReasoning = isReasoningEffortSupported(model);
+        Map<String, Object> payload = buildRequestPayload(request, model, lang, context, tryWithReasoning);
         String jsonBody = objectMapper.writeValueAsString(payload);
 
         HttpRequest httpRequest = HttpRequest.newBuilder()
@@ -176,28 +195,87 @@ public class AiMentorService {
                 .header("Authorization", "Bearer " + openRouterConfig.getApiKey())
                 .header("HTTP-Referer", "https://codementor.ai")
                 .header("X-Title", "CodeMentor AI Programming Mentor")
-                .timeout(Duration.ofSeconds(35))
+                .timeout(Duration.ofSeconds(45))
                 .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                 .build();
 
         HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 
+        // If HTTP 400 occurred and we sent reasoning parameter, retry once without reasoning parameter
+        if (response.statusCode() == 400 && tryWithReasoning) {
+            String safeBody = redactSecrets(response.body() != null ? response.body() : "");
+            logger.warn("OpenRouter rejected reasoning configuration for model {} (HTTP 400: {}). Retrying without reasoning parameter.", model, safeBody);
+            Map<String, Object> retryPayload = buildRequestPayload(request, model, lang, context, false);
+            String retryJsonBody = objectMapper.writeValueAsString(retryPayload);
+
+            HttpRequest retryRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(openRouterConfig.getApiUrl()))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + openRouterConfig.getApiKey())
+                    .header("HTTP-Referer", "https://codementor.ai")
+                    .header("X-Title", "CodeMentor AI Programming Mentor")
+                    .timeout(Duration.ofSeconds(45))
+                    .POST(HttpRequest.BodyPublishers.ofString(retryJsonBody))
+                    .build();
+
+            response = httpClient.send(retryRequest, HttpResponse.BodyHandlers.ofString());
+        }
+
+        String rawBody = response.body() != null ? response.body() : "";
+
         if (response.statusCode() != 200) {
-            String rawBody = response.body() != null ? response.body() : "";
             String safeBody = redactSecrets(rawBody);
             logger.warn("OpenRouter API returned HTTP {}: {}", response.statusCode(), safeBody);
+            logSafeResponseDiagnostics(response.statusCode(), model, null, safeBody);
             String errorSummary = extractErrorMessage(rawBody, response.statusCode());
             throw new OpenRouterApiException(response.statusCode(), errorSummary);
         }
 
-        JsonNode rootNode = objectMapper.readTree(response.body());
+        JsonNode rootNode = objectMapper.readTree(rawBody);
+        logSafeResponseDiagnostics(response.statusCode(), model, rootNode, rawBody);
+
         String extractedContent = extractContentFromOpenRouterResponse(rootNode);
 
         if (extractedContent == null || extractedContent.isBlank() || "null".equalsIgnoreCase(extractedContent.trim())) {
+            logger.warn("OpenRouter model '{}' returned 200 OK, but no user-facing content could be extracted. (Finish reason / structure captured in diagnostics above).", model);
             throw new RuntimeException("OpenRouter response did not contain user-facing content (null, empty, or reasoning-only).");
         }
 
         return extractedContent.trim();
+    }
+
+    public void logSafeResponseDiagnostics(int statusCode, String model, JsonNode rootNode, String rawBody) {
+        try {
+            if (rootNode != null && !rootNode.isMissingNode() && !rootNode.isNull()) {
+                JsonNode choices = rootNode.path("choices");
+                int choiceCount = choices.isArray() ? choices.size() : 0;
+                JsonNode firstChoice = choiceCount > 0 ? choices.get(0) : null;
+                String finishReason = firstChoice != null ? firstChoice.path("finish_reason").asText("N/A") : "none";
+                JsonNode messageNode = firstChoice != null ? firstChoice.path("message") : null;
+                String contentNodeType = (messageNode != null && !messageNode.path("content").isMissingNode())
+                        ? messageNode.path("content").getNodeType().name()
+                        : "MISSING";
+                boolean hasReasoning = messageNode != null
+                        && !messageNode.path("reasoning").isMissingNode()
+                        && !messageNode.path("reasoning").isNull();
+                boolean hasReasoningContent = messageNode != null
+                        && !messageNode.path("reasoning_content").isMissingNode()
+                        && !messageNode.path("reasoning_content").isNull();
+
+                JsonNode usage = rootNode.path("usage");
+                int promptTokens = usage.path("prompt_tokens").asInt(-1);
+                int completionTokens = usage.path("completion_tokens").asInt(-1);
+                int totalTokens = usage.path("total_tokens").asInt(-1);
+
+                logger.info("OpenRouter response diagnostics: status={}, model={}, choices={}, finish_reason={}, contentNodeType={}, hasReasoning={}, hasReasoningContent={}, tokens=[prompt:{}, completion:{}, total:{}]",
+                        statusCode, model, choiceCount, finishReason, contentNodeType, hasReasoning, hasReasoningContent, promptTokens, completionTokens, totalTokens);
+            } else {
+                String safeBody = redactSecrets(rawBody != null ? rawBody : "");
+                logger.info("OpenRouter response diagnostics: status={}, model={}, rawBodyLength={}", statusCode, model, safeBody.length());
+            }
+        } catch (Exception e) {
+            logger.debug("Failed to log safe diagnostics: {}", e.getMessage());
+        }
     }
 
     private static final java.util.regex.Pattern THINK_TAG_PATTERN =
@@ -232,34 +310,57 @@ public class AiMentorService {
         JsonNode messageNode = firstChoice.path("message");
         JsonNode contentNode = messageNode.path("content");
 
-        if (contentNode.isMissingNode() || contentNode.isNull()) {
-            return null;
-        }
-
         // 1. Plain string content
-        if (contentNode.isTextual()) {
-            return cleanUserFacingContent(contentNode.asText());
-        }
+        if (!contentNode.isMissingNode() && !contentNode.isNull()) {
+            if (contentNode.isTextual()) {
+                return cleanUserFacingContent(contentNode.asText());
+            }
 
-        // 2. Array-based structured content, e.g. [{"type": "text", "text": "..."}]
-        if (contentNode.isArray()) {
-            StringBuilder sb = new StringBuilder();
-            for (JsonNode part : contentNode) {
-                if (part.isTextual()) {
-                    sb.append(part.asText());
-                } else if (part.isObject()) {
-                    String partType = part.path("type").asText("");
-                    // Explicitly skip any reasoning/thought parts
-                    if ("reasoning".equalsIgnoreCase(partType) || "thought".equalsIgnoreCase(partType) || "thinking".equalsIgnoreCase(partType)) {
-                        continue;
-                    }
-                    JsonNode textNode = part.path("text");
-                    if (!textNode.isMissingNode() && !textNode.isNull() && !textNode.asText().isBlank()) {
-                        sb.append(textNode.asText());
+            // 2. Array-based structured content, e.g. [{"type": "text", "text": "..."}]
+            if (contentNode.isArray()) {
+                StringBuilder sb = new StringBuilder();
+                for (JsonNode part : contentNode) {
+                    if (part.isTextual()) {
+                        sb.append(part.asText());
+                    } else if (part.isObject()) {
+                        String partType = part.path("type").asText("");
+                        // Explicitly skip any reasoning/thought parts
+                        if ("reasoning".equalsIgnoreCase(partType) || "thought".equalsIgnoreCase(partType) || "thinking".equalsIgnoreCase(partType)) {
+                            continue;
+                        }
+                        JsonNode textNode = part.path("text");
+                        if (!textNode.isMissingNode() && !textNode.isNull() && !textNode.asText().isBlank()) {
+                            sb.append(textNode.asText());
+                        } else {
+                            JsonNode contentSubNode = part.path("content");
+                            if (!contentSubNode.isMissingNode() && !contentSubNode.isNull() && !contentSubNode.asText().isBlank()) {
+                                sb.append(contentSubNode.asText());
+                            }
+                        }
                     }
                 }
+                return cleanUserFacingContent(sb.toString());
             }
-            return cleanUserFacingContent(sb.toString());
+
+            // 3. Object-based structured content with "text" field
+            if (contentNode.isObject()) {
+                JsonNode textNode = contentNode.path("text");
+                if (!textNode.isMissingNode() && !textNode.isNull()) {
+                    return cleanUserFacingContent(textNode.asText());
+                }
+            }
+        }
+
+        // 4. Legacy text completions format in choices[0].text
+        JsonNode choiceTextNode = firstChoice.path("text");
+        if (!choiceTextNode.isMissingNode() && !choiceTextNode.isNull() && choiceTextNode.isTextual()) {
+            return cleanUserFacingContent(choiceTextNode.asText());
+        }
+
+        // 5. Delta format in choices[0].delta.content (if returned by streaming/delta endpoints)
+        JsonNode deltaContent = firstChoice.path("delta").path("content");
+        if (!deltaContent.isMissingNode() && !deltaContent.isNull() && deltaContent.isTextual()) {
+            return cleanUserFacingContent(deltaContent.asText());
         }
 
         return null;
