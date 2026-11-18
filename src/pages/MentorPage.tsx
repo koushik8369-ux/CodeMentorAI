@@ -346,7 +346,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
                 {validation && validation.status === 'VALID' && (
                   <span
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                    title={validation.validationSummary || 'Java syntax parsed with JavaParser (Java 21 grammar; not compiled or executed)'}
+                    title={validation.validationSummary || 'Java syntax parsed with JavaParser (Java 21 grammar; syntax check only, not compiled or executed)'}
                   >
                     <Check className="w-3 h-3 text-emerald-400" />
                     <span>{validation.isCorrected ? 'Syntax Repaired (Java 21)' : 'Syntax Validated (Java 21)'}</span>
@@ -355,7 +355,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
                 {validation && validation.status === 'INVALID' && (
                   <span
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                    title={validation.errorMessage || validation.validationSummary || 'JavaParser detected syntax issues'}
+                    title={validation.errorMessage || validation.validationSummary || 'JavaParser detected syntax parse issues (syntax check only)'}
                   >
                     <AlertTriangle className="w-3 h-3 text-amber-400" />
                     <span>Syntax Warning: Parse issues</span>
@@ -364,7 +364,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
                 {validation && validation.status === 'NOT_CHECKED' && (
                   <span
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800/60 text-slate-400 border border-slate-700/60"
-                    title={validation.validationSummary || 'Syntax validation not applicable for this block'}
+                    title={validation.validationSummary || 'Syntax parsing not applicable for this block'}
                   >
                     <span>Syntax check: N/A</span>
                   </span>
@@ -390,7 +390,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
             {validation && validation.isCorrected && (
               <div className="px-3 py-1 bg-emerald-950/20 border-b border-emerald-500/20 text-emerald-300 text-[11px] flex items-center gap-1.5 font-sans">
                 <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                <span>Automatically repaired and validated against Java 21 syntax grammar.</span>
+                <span>Automatically repaired and parsed against Java 21 syntax grammar (syntax check only; not compiled or executed).</span>
               </div>
             )}
             {validation && validation.status === 'INVALID' && validation.errorMessage && (
@@ -593,13 +593,13 @@ Choose a quick starter topic above or type any coding question or snippet below!
                   {msg.validationStatus === 'VALID' && (
                     <div className="mt-2.5 text-[11px] text-emerald-400/90 flex items-center gap-1.5 font-mono">
                       <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span>{msg.validationSummary || 'All Java code snippets validated successfully against Java 21 syntax grammar.'}</span>
+                      <span>{msg.validationSummary || 'All Java code snippets parsed cleanly against Java 21 syntax grammar (syntax check only; not compiled or executed).'}</span>
                     </div>
                   )}
                   {msg.validationStatus === 'INVALID' && (
                     <div className="mt-2.5 text-[11px] text-amber-400/90 flex items-center gap-1.5 font-mono">
                       <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                      <span>{msg.validationSummary || 'One or more Java code snippets contain syntax parse issues.'}</span>
+                      <span>{msg.validationSummary || 'One or more Java code snippets contain syntax parse issues (syntax check only; not compiled or executed).'}</span>
                     </div>
                   )}
 

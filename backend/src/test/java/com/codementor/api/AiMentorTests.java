@@ -1205,4 +1205,170 @@ public class AiMentorTests {
         org.junit.jupiter.api.Assertions.assertEquals(4, response.getValidationDetails().get(4).getBlockIndex());
         org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationDetails().get(4).getStatus());
     }
+
+    // =========================================================================
+    // MENTOR KNOWLEDGE ACCURACY, RESPONSE STRUCTURE & VALIDATION WORDING SUITE
+    // =========================================================================
+
+    @Test
+    @DisplayName("System prompt & modern Java fallback accurately state Java 10 var, shallowly immutable records, finalized Java 21 virtual threads, preview structured concurrency, and 5-section format")
+    void mentorKnowledge_ModernJavaAccuracyAndFiveSectionStructure() {
+        // 1. Verify system prompt injected into OpenRouter payload contains accurate Java rules & 5-section format
+        AiMentorRequest promptCheckReq = new AiMentorRequest(
+                "Explain Java 21 virtual threads, structured concurrency, records, and var",
+                List.of(),
+                "Java",
+                "Core Java"
+        );
+        Map<String, Object> payload = aiMentorService.buildRequestPayload(promptCheckReq, "tencent/hy4", "Java", "Core Java", true);
+        @SuppressWarnings("unchecked")
+        List<Map<String, String>> messages = (List<Map<String, String>>) payload.get("messages");
+        String systemPrompt = messages.get(0).get("content");
+
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("Java 10"), "Must identify var as introduced in Java 10");
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("shallowly immutable"), "Must explain Java records are shallowly immutable");
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("finalized in Java 21"), "Must identify virtual threads as finalized in Java 21");
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("preview feature in Java 21"), "Must identify structured concurrency as preview in Java 21");
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("Never claim that provided code was compiled or executed"));
+
+        // Verify 5-section response structure in system prompt
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("Understand & Clarify"));
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("Explain the Concept"));
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("Practical Code Example"));
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("Step-by-Step Code Walkthrough"));
+        org.junit.jupiter.api.Assertions.assertTrue(systemPrompt.contains("Cheat Sheet"));
+
+        // 2. Verify heuristic fallback response when API key is not configured
+        com.codementor.api.config.OpenRouterConfig offlineConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return false;
+            }
+        };
+        com.codementor.api.service.AiMentorService offlineService = new com.codementor.api.service.AiMentorService(
+                offlineConfig, javaCodeValidationService
+        );
+        com.codementor.api.dto.AiMentorResponse modernJavaRes = offlineService.chatWithMentor(promptCheckReq);
+        String body = modernJavaRes.getAiResponse();
+
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("Java 10"), "Fallback must state var was introduced in Java 10");
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("shallowly immutable"), "Fallback must state Java records are shallowly immutable");
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("Finalized in Java 21") || body.contains("finalized in Java 21"), "Fallback must state virtual threads are finalized in Java 21");
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("preview feature in Java 21"), "Fallback must state structured concurrency is a preview feature in Java 21");
+
+        // Verify 5-section structure in fallback response
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("Understand & Clarify"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("Explain the Concept"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("Practical Code Example"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("Step-by-Step Code Walkthrough"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("Cheat Sheet"));
+
+        // Verify included Java code example parses cleanly with JavaParser
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", modernJavaRes.getValidationStatus());
+    }
+
+    @Test
+    @DisplayName("Validation wording clearly distinguishes Java syntax parsing from compilation and runtime execution")
+    void validationWording_DistinguishesSyntaxParsingFromCompilationAndExecution() {
+        String validMarkdown = "```java\n"
+                + "public record UserSummary(String id, java.util.List<String> roles) {\n"
+                + "    public UserSummary { roles = java.util.List.copyOf(roles); }\n"
+                + "}\n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse validResp = new com.codementor.api.dto.AiMentorResponse(
+                validMarkdown, "tencent/hy4", "SUCCESS", "Java", "Records", null
+        );
+        aiMentorService.validateAndEnrichResponse(validResp, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", validResp.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                validResp.getValidationSummary().toLowerCase().contains("not compiled or executed"),
+                "Validation summary must explicitly clarify code was not compiled or executed"
+        );
+        org.junit.jupiter.api.Assertions.assertTrue(
+                validResp.getValidationDetails().get(0).getValidationSummary().toLowerCase().contains("not compiled or executed"),
+                "Per-block summary must explicitly clarify code was not compiled or executed"
+        );
+        org.junit.jupiter.api.Assertions.assertFalse(
+                validResp.getValidationSummary().toLowerCase().contains("compiled successfully"),
+                "Must never claim code was compiled"
+        );
+    }
+
+    @Test
+    @DisplayName("Validation coverage: valid standalone Java method, comment-only block, ordinary prose, non-Java block, and genuinely invalid Java syntax")
+    void validationCoverage_AllFiveRequiredBlockCategories() {
+        // 1. Valid standalone Java method using Java 10 var & Java 21 virtual threads
+        String standaloneMethod = "public void launchVirtualTasks(java.util.List<String> jobs) {\n"
+                + "    var count = jobs.size();\n"
+                + "    try (var executor = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor()) {\n"
+                + "        for (var job : jobs) {\n"
+                + "            executor.submit(() -> System.out.println(job + \" / \" + count));\n"
+                + "        }\n"
+                + "    }\n"
+                + "}";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(standaloneMethod).getStatus());
+
+        // 2. Comment-only code block -> NOT_CHECKED
+        String commentOnly = "// Implement repository lookup here\n/* Avoid blocking virtual threads inside synchronized blocks */";
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet(commentOnly).getStatus());
+
+        // 3. Ordinary explanatory prose -> NOT_CHECKED
+        String ordinaryProse = "Local variable type inference (var) was introduced in Java 10. Records are shallowly immutable, while virtual threads are finalized in Java 21.";
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet(ordinaryProse).getStatus());
+
+        // 4. Explicit non-Java code blocks -> NOT_CHECKED via isJavaBlock & AiMentorService
+        org.junit.jupiter.api.Assertions.assertFalse(
+                javaCodeValidationService.isJavaBlock("python", "Java", "def greet(name):\n    return f'Hi {name}'"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                javaCodeValidationService.isJavaBlock("sql", "Java", "SELECT id, name FROM users WHERE active = true;"));
+        org.junit.jupiter.api.Assertions.assertFalse(
+                javaCodeValidationService.isJavaBlock("bash", "Java", "java --enable-preview --source 21 Main.java"));
+
+        // 5. Genuinely invalid Java syntax -> INVALID
+        String genuinelyInvalid = "public class BrokenSample {\n"
+                + "    public int compute(int x {\n"
+                + "        return x + ;\n"
+                + "    }\n"
+                + "}";
+        com.codementor.api.service.JavaCodeValidationService.ValidationResult invalidResult =
+                javaCodeValidationService.validateJavaSnippet(genuinelyInvalid);
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", invalidResult.getStatus());
+        org.junit.jupiter.api.Assertions.assertFalse(invalidResult.isValid());
+        org.junit.jupiter.api.Assertions.assertNotNull(invalidResult.getMessage());
+
+        // End-to-end check on AiMentorService with mixed blocks including genuinely invalid Java
+        String mixedMarkdown = "```java\n" + standaloneMethod + "\n```\n\n"
+                + "```java\n" + commentOnly + "\n```\n\n"
+                + "```text\n" + ordinaryProse + "\n```\n\n"
+                + "```python\ndef add(a, b): return a + b\n```\n\n"
+                + "```java\n" + genuinelyInvalid + "\n```";
+        com.codementor.api.dto.AiMentorResponse mixedResp = new com.codementor.api.dto.AiMentorResponse(
+                mixedMarkdown, "tencent/hy4", "SUCCESS", "Java", "Java 21", null
+        );
+        com.codementor.api.config.OpenRouterConfig offlineConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return false;
+            }
+        };
+        com.codementor.api.service.AiMentorService offlineService = new com.codementor.api.service.AiMentorService(
+                offlineConfig, javaCodeValidationService
+        );
+        offlineService.validateAndEnrichResponse(mixedResp, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", mixedResp.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(5, mixedResp.getValidationDetails().size());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", mixedResp.getValidationDetails().get(0).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", mixedResp.getValidationDetails().get(1).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", mixedResp.getValidationDetails().get(2).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", mixedResp.getValidationDetails().get(3).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID", mixedResp.getValidationDetails().get(4).getStatus());
+        org.junit.jupiter.api.Assertions.assertTrue(
+                mixedResp.getValidationSummary().toLowerCase().contains("not compiled or executed")
+        );
+    }
 }

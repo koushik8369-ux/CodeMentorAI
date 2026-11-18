@@ -256,16 +256,16 @@ public class JavaCodeValidationService {
      */
     public ValidationResult validateJavaSnippet(String code) {
         if (code == null || code.isBlank()) {
-            return ValidationResult.notChecked("Empty code block");
+            return ValidationResult.notChecked("Empty code block (syntax parsing skipped)");
         }
 
         String cleaned = code.trim();
         if (isOnlyComments(cleaned)) {
-            return ValidationResult.notChecked("Code block contains only comments");
+            return ValidationResult.notChecked("Code block contains only comments (syntax parsing not applicable)");
         }
 
         if (isOrdinaryProse(cleaned)) {
-            return ValidationResult.notChecked("Plain explanatory text (not Java code)");
+            return ValidationResult.notChecked("Plain explanatory text (syntax parsing not applicable)");
         }
 
         JavaParser parser = createParser();
@@ -274,21 +274,21 @@ public class JavaCodeValidationService {
             // Attempt 1: Direct compilation unit (classes, interfaces, records, enums, full files)
             ParseResult<CompilationUnit> cuResult = parser.parse(cleaned);
             if (cuResult.isSuccessful() && cuResult.getProblems().isEmpty()) {
-                return ValidationResult.valid("Java syntax parsed successfully (Java 21 grammar)");
+                return ValidationResult.valid("Java syntax parsed cleanly under Java 21 grammar (syntax check only; not compiled or executed)");
             }
 
             // Attempt 2: Method / Member declarations wrapped inside a temporary class
             String wrappedInClass = buildWrappedClass(cleaned);
             ParseResult<CompilationUnit> classResult = parser.parse(wrappedInClass);
             if (classResult.isSuccessful() && classResult.getProblems().isEmpty()) {
-                return ValidationResult.valid("Java method/declaration syntax parsed successfully (Java 21 grammar)");
+                return ValidationResult.valid("Java method/declaration syntax parsed cleanly under Java 21 grammar (syntax check only; not compiled or executed)");
             }
 
             // Attempt 3: Interface default / abstract method declarations wrapped inside a temporary interface
             String wrappedInInterface = buildWrappedInterface(cleaned);
             ParseResult<CompilationUnit> interfaceResult = parser.parse(wrappedInInterface);
             if (interfaceResult.isSuccessful() && interfaceResult.getProblems().isEmpty()) {
-                return ValidationResult.valid("Java interface method syntax parsed successfully (Java 21 grammar)");
+                return ValidationResult.valid("Java interface method syntax parsed cleanly under Java 21 grammar (syntax check only; not compiled or executed)");
             }
 
             // Attempt 4: Standalone constructor wrapped in a class with matching name
@@ -297,7 +297,7 @@ public class JavaCodeValidationService {
                 String wrappedConstructor = buildWrappedNamedClass(cleaned, constructorClassName);
                 ParseResult<CompilationUnit> ctorResult = parser.parse(wrappedConstructor);
                 if (ctorResult.isSuccessful() && ctorResult.getProblems().isEmpty()) {
-                    return ValidationResult.valid("Java constructor syntax parsed successfully (Java 21 grammar)");
+                    return ValidationResult.valid("Java constructor syntax parsed cleanly under Java 21 grammar (syntax check only; not compiled or executed)");
                 }
             }
 
@@ -305,7 +305,7 @@ public class JavaCodeValidationService {
             String wrappedInMethod = buildWrappedMethod(cleaned);
             ParseResult<CompilationUnit> methodResult = parser.parse(wrappedInMethod);
             if (methodResult.isSuccessful() && methodResult.getProblems().isEmpty()) {
-                return ValidationResult.valid("Java statement/block syntax parsed successfully (Java 21 grammar)");
+                return ValidationResult.valid("Java statement/block syntax parsed cleanly under Java 21 grammar (syntax check only; not compiled or executed)");
             }
 
             // Prefer the most relevant parse error diagnostic
@@ -322,14 +322,14 @@ public class JavaCodeValidationService {
                 return ValidationResult.invalid(sanitizeProblemMessage(methodResult.getProblems().get(0).getMessage()));
             }
 
-            return ValidationResult.invalid("Syntax parsing error detected in Java code snippet");
+            return ValidationResult.invalid("Syntax parse error detected in Java code snippet (syntax check only)");
 
         } catch (ParseProblemException ex) {
             String msg = ex.getProblems().isEmpty() ? ex.getMessage() : ex.getProblems().get(0).getMessage();
             return ValidationResult.invalid(sanitizeProblemMessage(msg));
         } catch (Exception ex) {
             logger.debug("JavaParser unexpected failure: {}", ex.getMessage());
-            return ValidationResult.invalid("Syntax validation encountered an unexpected parsing error");
+            return ValidationResult.invalid("Syntax parsing encountered an unexpected error (syntax check only)");
         }
     }
 

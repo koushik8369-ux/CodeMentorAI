@@ -487,7 +487,7 @@ public class AiMentorService {
                 + "- Primary Programming Language / Tech Stack: " + language + "\n"
                 + "- Learning Context: " + learningContext + "\n\n"
                 + "YOUR CORE DOMAINS OF EXPERTISE:\n"
-                + "1. Java programming, modern Java (Java 17/21 features, records, virtual threads, pattern matching).\n"
+                + "1. Java programming, modern Java (Java 10 local variable type inference `var`, Java 16+ records, Java 17 LTS sealed types/pattern matching, and Java 21 LTS finalized virtual threads & preview structured concurrency).\n"
                 + "2. Object-Oriented Programming (SOLID principles, clean architecture, design patterns, encapsulation, polymorphism).\n"
                 + "3. Data Structures & Algorithms (arrays, linked lists, trees, graphs, heaps, dynamic programming, two pointers, binary search).\n"
                 + "4. Systematic problem-solving techniques and algorithmic complexity analysis (time O(n), auxiliary space).\n"
@@ -498,14 +498,19 @@ public class AiMentorService {
                 + "9. Code reviews, static analysis, refactoring, and debugging techniques.\n"
                 + "10. Technical interview preparation (FAANG-style technical screens, behavioral STAR responses, system design).\n"
                 + "11. Scalable project architecture and operational development guidance.\n\n"
+                + "MODERN JAVA TECHNICAL ACCURACY RULES:\n"
+                + "- Local variable type inference (`var`) was introduced in **Java 10** (JEP 286). It applies to local variables with initializers (and lambda parameters since Java 11), never to fields, method parameters, or return types.\n"
+                + "- Java **records** (standardized in Java 16) are **shallowly immutable**: component fields are `final` and cannot be reassigned, but mutable objects held by components (e.g., `List`, `Map`, arrays) can still be mutated unless defensively copied (such as `List.copyOf` in a compact constructor).\n"
+                + "- **Virtual threads** (Project Loom, JEP 444) are **finalized in Java 21** and available for production use without preview flags.\n"
+                + "- **Structured concurrency** (`StructuredTaskScope`, JEP 453) is a **preview feature in Java 21** (requires `--enable-preview` in Java 21).\n"
+                + "- **Static Syntax vs. Execution Honesty**: Never claim that provided code was compiled or executed unless an actual compiler or runtime ran it. CodeMentor AI checks Java snippets solely via static syntax parsing (JavaParser).\n\n"
                 + "STRUCTURED RESPONSE STYLE FOR TECHNICAL & PROGRAMMING QUESTIONS:\n"
-                + "When answering coding or technical queries, always follow this clear, structured format:\n"
+                + "When answering coding or technical queries, always follow this clear, 5-section structured format:\n"
                 + "1. **Understand & Clarify**: Briefly validate the core problem, question, or requirements.\n"
-                + "2. **Explain the Concept**: Explain the underlying computer science or architectural mechanism clearly with helpful intuition.\n"
-                + "3. **Practical Code Example**: Provide clean, idiomatic, fully working, and nicely formatted code using markdown code blocks.\n"
-                + "4. **Step-by-Step Code Walkthrough**: Explain key lines and execution flow step by step.\n"
-                + "5. **Common Pitfalls & Mistakes**: Highlight subtle traps, edge cases, or antipatterns candidates often make.\n"
-                + "6. **Improvements & Next Steps**: Suggest time/space optimizations, real-world alternatives, or thought-provoking follow-up questions to encourage independent growth.\n\n"
+                + "2. **Explain the Concept**: Explain the underlying computer science, language version semantics, or architectural mechanism clearly with helpful intuition.\n"
+                + "3. **Practical Code Example**: Provide clean, idiomatic, syntactically valid, and nicely formatted code using markdown code blocks.\n"
+                + "4. **Step-by-Step Code Walkthrough**: Explain key lines, design trade-offs, and behavior step by step.\n"
+                + "5. **Cheat Sheet**: Provide a scannable summary of key rules, version/complexity notes, common pitfalls, and next steps.\n\n"
                 + "TONE & BEHAVIOR:\n"
                 + "- Warm, encouraging, and collaborative.\n"
                 + "- Speak as an experienced colleague mentoring someone who wants to achieve technical mastery.\n"
@@ -515,13 +520,57 @@ public class AiMentorService {
     private String generateFallbackMentorResponse(String message, String language, String learningContext) {
         String lower = message != null ? message.toLowerCase() : "";
 
+        // Heuristic detection for Modern Java (var, records, virtual threads, structured concurrency)
+        if (lower.contains("record") || lower.contains("virtual thread") || lower.contains("structured concurrency")
+                || lower.contains("structuredtaskscope") || lower.contains("type inference") || lower.contains("`var`")
+                || lower.matches(".*\\bvar\\b.*") || lower.contains("java 10") || lower.contains("java 21") || lower.contains("loom")) {
+            return "### 1. Understand & Clarify\n\n"
+                    + "You are asking about modern Java language and concurrency features—specifically release milestones, immutability guarantees, and Java 21 concurrency primitives.\n\n"
+                    + "### 2. Explain the Concept\n\n"
+                    + "- **Local Variable Type Inference (`var`)**: Introduced in **Java 10** (JEP 286) to reduce boilerplate on local variables with initializers while keeping Java strictly statically typed at compile time.\n"
+                    + "- **Java Records (`record`)**: Standardized in Java 16, records are **shallowly immutable** data carriers. Their component fields are `final` (no setters, no reassignment), but if a component holds a mutable object (such as an `ArrayList` or `HashMap`), the contents of that collection can still mutate unless you copy it defensively in a compact constructor.\n"
+                    + "- **Virtual Threads**: **Finalized in Java 21** (JEP 444), virtual threads are lightweight JVM-managed threads suited for high-throughput, I/O-bound concurrency without requiring `--enable-preview`.\n"
+                    + "- **Structured Concurrency**: Introduced via `StructuredTaskScope` (JEP 453), structured concurrency is a **preview feature in Java 21** (requiring `--enable-preview`), designed to manage related concurrent subtasks as a single atomic unit of work.\n\n"
+                    + "### 3. Practical Code Example\n\n"
+                    + "```java\n"
+                    + "import java.util.List;\n"
+                    + "import java.util.concurrent.Executors;\n\n"
+                    + "public record TaskBatch(String batchId, List<String> items) {\n"
+                    + "    // Compact constructor enforces defensive copy for shallowly immutable record components\n"
+                    + "    public TaskBatch {\n"
+                    + "        items = List.copyOf(items);\n"
+                    + "    }\n\n"
+                    + "    public static void runWithVirtualThreads(TaskBatch batch) {\n"
+                    + "        // Local variable type inference (introduced in Java 10)\n"
+                    + "        var itemCount = batch.items().size();\n\n"
+                    + "        // Virtual threads are finalized in Java 21 (no preview flag needed)\n"
+                    + "        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {\n"
+                    + "            for (var item : batch.items()) {\n"
+                    + "                executor.submit(() -> System.out.println(\"Processing \" + item + \" of \" + itemCount));\n"
+                    + "            }\n"
+                    + "        }\n"
+                    + "    }\n"
+                    + "}\n"
+                    + "```\n\n"
+                    + "### 4. Step-by-Step Code Walkthrough\n\n"
+                    + "1. `public record TaskBatch(...)` creates `private final` fields for `batchId` and `items`. Because records are shallowly immutable, the compact constructor calls `List.copyOf(items)` so external callers cannot mutate the list afterward.\n"
+                    + "2. `var itemCount = ...` uses Java 10 local variable type inference; the compiler infers `int` statically from the initializer.\n"
+                    + "3. `Executors.newVirtualThreadPerTaskExecutor()` uses Java 21 finalized virtual threads, automatically waiting for submitted tasks in the `try`-with-resources block.\n"
+                    + "4. If you adopt `StructuredTaskScope` in Java 21 to coordinate subtasks with fail-fast cancellation, compile and run with `--enable-preview` since structured concurrency is a preview feature in Java 21.\n\n"
+                    + "### 5. Cheat Sheet\n\n"
+                    + "- **`var` (Java 10)**: Local variables with initializers only; cannot be used for fields, method parameters, or `null` initializers.\n"
+                    + "- **`record` (Shallowly Immutable)**: Fields are `final`, but referenced mutable collections need `List.copyOf(...)` / `Map.copyOf(...)`.\n"
+                    + "- **Virtual Threads**: **Finalized in Java 21** — avoid `synchronized` around blocking I/O on Java 21 to prevent carrier-thread pinning.\n"
+                    + "- **Structured Concurrency**: **Preview feature in Java 21** (`--enable-preview` required).";
+        }
+
         // Heuristic detection based on the user's question
         if (lower.contains("spring") || lower.contains("bean") || lower.contains("autowired") || lower.contains("dependency injection") || lower.contains("ioc")) {
-            return "### 1. Understanding the Concept: Spring Boot Dependency Injection\n\n"
-                    + "At its core, **Dependency Injection (DI)** is a software design pattern where objects receive their dependencies from an external assembler (the **Spring IoC Container**) rather than creating them directly with `new`.\n\n"
-                    + "### 2. How it Works\n"
-                    + "Instead of tightly coupling your classes, Spring manages the lifecycle of your components (called **Beans**) and injects them where needed. Constructor injection is preferred over field injection because it ensures immutability, facilitates unit testing, and prevents `NullPointerException`s.\n\n"
-                    + "### 3. Practical Code Example\n"
+            return "### 1. Understand & Clarify\n\n"
+                    + "You want to understand **Spring Boot Dependency Injection (DI)**—how the Spring IoC Container wires components together and why constructor injection is preferred.\n\n"
+                    + "### 2. Explain the Concept\n\n"
+                    + "Dependency Injection is a design pattern where objects receive their collaborators from an external assembler (the **Spring IoC Container**) rather than instantiating them with `new`. Constructor injection is preferred over field injection because dependencies can be `private final`, required invariants are enforced at instantiation time, and classes remain easy to unit test without starting Spring.\n\n"
+                    + "### 3. Practical Code Example\n\n"
                     + "```java\n"
                     + "@Service\n"
                     + "public class PaymentService {\n"
@@ -535,23 +584,22 @@ public class AiMentorService {
                     + "    }\n"
                     + "}\n"
                     + "```\n\n"
-                    + "### 4. Step-by-Step Walkthrough\n"
-                    + "1. `@Service` registers `PaymentService` as a managed singleton bean in the Spring ApplicationContext.\n"
-                    + "2. During application startup, Spring scans constructor parameters, finds the matching `PaymentGateway` bean, and injects it.\n"
-                    + "3. The field is `private final`, ensuring thread safety and preventing reassignment.\n\n"
-                    + "### 5. Common Pitfalls\n"
-                    + "- **Field injection (`@Autowired private Gateway gateway`)**: Makes unit testing difficult without starting Spring, and hides dependencies.\n"
-                    + "- **Circular dependencies**: Bean A requires Bean B, which requires Bean A. Redesign the boundary or use events.\n\n"
-                    + "### 6. Mentoring Tip\n"
-                    + "In technical interviews, interviewers love hearing how DI enables test-driven development (TDD) via mocks (`Mockito.mock(...)`).";
+                    + "### 4. Step-by-Step Code Walkthrough\n\n"
+                    + "1. `@Service` registers `PaymentService` as a managed singleton bean in the Spring `ApplicationContext`.\n"
+                    + "2. During startup, Spring inspects the single constructor, locates the `PaymentGateway` bean, and injects it.\n"
+                    + "3. `Objects.requireNonNull` validates the contract immediately, and `private final` ensures thread-safe publication.\n\n"
+                    + "### 5. Cheat Sheet\n\n"
+                    + "- **Prefer Constructor Injection**: Enables `final` fields, explicit dependencies, and plain JUnit/Mockito testing.\n"
+                    + "- **Avoid Field Injection (`@Autowired` on fields)**: Hides coupling and complicates unit tests.\n"
+                    + "- **Watch for Circular Dependencies**: Break A <-> B cycles by extracting a shared service or publishing domain events.";
         }
 
         if (lower.contains("react") || lower.contains("useeffect") || lower.contains("hook") || lower.contains("state") || lower.contains("props")) {
-            return "### 1. Understanding the Question\n\n"
-                    + "Managing side effects and state synchronizations correctly is one of the most critical aspects of production React and TypeScript applications.\n\n"
-                    + "### 2. The Concept\n"
-                    + "React components must be pure functions of their props and state. Side effects (data fetching, DOM subscriptions, timers) belong inside `useEffect`, synchronized with an explicit dependency array.\n\n"
-                    + "### 3. Practical Example: Safe Async Fetching with Cleanup\n"
+            return "### 1. Understand & Clarify\n\n"
+                    + "Managing side effects and asynchronous state synchronization safely is essential for predictable React and TypeScript components.\n\n"
+                    + "### 2. Explain the Concept\n\n"
+                    + "React render logic should stay pure relative to props and state. Side effects such as network requests, subscriptions, and timers belong in `useEffect` with an explicit dependency array and a cleanup callback to cancel stale updates.\n\n"
+                    + "### 3. Practical Code Example\n\n"
                     + "```typescript\n"
                     + "import React, { useState, useEffect } from 'react';\n\n"
                     + "interface CandidateData {\n"
@@ -582,22 +630,22 @@ public class AiMentorService {
                     + "  return <div>{data?.name}</div>;\n"
                     + "};\n"
                     + "```\n\n"
-                    + "### 4. Step-by-Step Walkthrough\n"
-                    + "1. The `isCancelled` flag tracks whether the component unmounted or `candidateId` changed before the fetch resolved.\n"
-                    + "2. The cleanup return function executes before the next effect or upon unmount, preventing memory leaks and state updates on unmounted trees.\n\n"
-                    + "### 5. Common Pitfalls\n"
-                    + "- Forgetting the dependency array causes infinite re-render loops.\n"
-                    + "- Putting object/array literals directly in dependencies triggers effect re-runs every render.\n\n"
-                    + "### 6. Recommended Next Step\n"
-                    + "Consider using TanStack Query (React Query) for caching, automated deduplication, and background refetching in enterprise apps.";
+                    + "### 4. Step-by-Step Code Walkthrough\n\n"
+                    + "1. `isCancelled` tracks whether the component unmounted or `candidateId` changed before the response arrived.\n"
+                    + "2. Only non-cancelled responses call `setData` and `setLoading`, preventing out-of-order race conditions.\n"
+                    + "3. React runs the returned cleanup function before the next effect execution and on unmount.\n\n"
+                    + "### 5. Cheat Sheet\n\n"
+                    + "- **Dependency Array**: Always list reactive values read inside `useEffect` to avoid stale closures or infinite loops.\n"
+                    + "- **Race Protection**: Use `AbortController` or a cancellation flag on async fetches.\n"
+                    + "- **Next Step**: Consider TanStack Query when you need caching, retries, and deduplication.";
         }
 
         if (lower.contains("sql") || lower.contains("database") || lower.contains("index") || lower.contains("join") || lower.contains("acid")) {
-            return "### 1. Understanding Relational Query Optimization & Indexing\n\n"
-                    + "Database performance in production often hinges on understanding how queries interact with disk I/O and B-Tree indexes.\n\n"
-                    + "### 2. Core Concept: B-Tree Indexes\n"
-                    + "A database index is a data structure (typically a balanced B-Tree) that allows the database engine to find specific rows in $O(\\log N)$ time rather than conducting an expensive Full Table Scan ($O(N)$ disk reads).\n\n"
-                    + "### 3. Practical Example: Composite Indexing\n"
+            return "### 1. Understand & Clarify\n\n"
+                    + "Database performance in production hinges on how queries use indexes to avoid costly full-table scans and disk sorts.\n\n"
+                    + "### 2. Explain the Concept\n\n"
+                    + "A relational index (typically a balanced B-Tree) maintains sorted keys pointing to table rows so the query planner can locate matching records in $O(\\log N)$ time instead of scanning every page ($O(N)$).\n\n"
+                    + "### 3. Practical Code Example\n\n"
                     + "```sql\n"
                     + "-- Table with millions of candidate submissions\n"
                     + "CREATE TABLE submissions (\n"
@@ -617,27 +665,26 @@ public class AiMentorService {
                     + "ORDER BY created_at DESC\n"
                     + "LIMIT 10;\n"
                     + "```\n\n"
-                    + "### 4. Step-by-Step Walkthrough\n"
+                    + "### 4. Step-by-Step Code Walkthrough\n\n"
                     + "1. The composite index orders entries first by `topic`, then by `created_at DESC`.\n"
-                    + "2. The engine immediately navigates to the 'Dynamic Programming' branch and reads the first 10 rows in already-sorted order.\n"
-                    + "3. `EXPLAIN ANALYZE` confirms that an **Index Scan** is performed without any disk sort.\n\n"
-                    + "### 5. Common Pitfalls\n"
-                    + "- **Leftmost Prefix Violation**: An index on `(A, B)` cannot be used for queries filtering only on `WHERE B = ?`.\n"
-                    + "- **Over-indexing**: Every write (INSERT/UPDATE/DELETE) must maintain all indexes, which degrades write throughput.\n\n"
-                    + "### 6. Mentoring Advice\n"
-                    + "In senior system design interviews, explain indexing trade-offs: faster reads vs slower writes and index bloat.";
+                    + "2. The engine jumps directly to the `'Dynamic Programming'` range and reads the top 10 rows already in sorted order.\n"
+                    + "3. `EXPLAIN ANALYZE` verifies whether the planner chose an Index Scan and tracks actual row counts and timing.\n\n"
+                    + "### 5. Cheat Sheet\n\n"
+                    + "- **Leftmost Prefix Rule**: An index on `(A, B)` accelerates `WHERE A = ?` and `WHERE A = ? AND B = ?`, not `WHERE B = ?` alone.\n"
+                    + "- **Read vs. Write Trade-off**: Every `INSERT`/`UPDATE`/`DELETE` updates affected indexes, so avoid redundant indexes.\n"
+                    + "- **Verify with `EXPLAIN`**: Always inspect actual query plans rather than guessing.";
         }
 
         if (lower.contains("algorithm") || lower.contains("dsa") || lower.contains("leetcode") || lower.contains("complexity") || lower.contains("array") || lower.contains("tree") || lower.contains("graph")) {
-            return "### 1. Problem-Solving Strategy: The 5-Step Interview Framework\n\n"
-                    + "When tackling data structure and algorithm problems in top-tier technical interviews, systematic communication is just as important as the code.\n\n"
-                    + "### 2. The Algorithmic Pattern Framework\n"
-                    + "Before writing any code, identify the underlying pattern:\n"
+            return "### 1. Understand & Clarify\n\n"
+                    + "You want a structured approach to recognizing algorithmic patterns—specifically using the **Two-Pointer** technique on sorted data.\n\n"
+                    + "### 2. Explain the Concept\n\n"
+                    + "Before coding, map constraints to known patterns:\n"
                     + "- **Sorted arrays / subarrays**: Two Pointers, Sliding Window, or Binary Search.\n"
-                    + "- **Hierarchies / Decisions**: Recursion, Tree DFS/BFS, Backtracking.\n"
-                    + "- **Optimal Substructure / Overlapping subproblems**: Dynamic Programming (Memoization or Tabulation).\n"
-                    + "- **Shortest path / Networks**: Breadth-First Search (unweighted) or Dijkstra's (weighted).\n\n"
-                    + "### 3. Practical Code Example: Two-Pointer Technique\n"
+                    + "- **Hierarchies / Decisions**: Tree DFS/BFS, Recursion, Backtracking.\n"
+                    + "- **Optimal Substructure / Overlapping subproblems**: Dynamic Programming.\n"
+                    + "- **Shortest path / Networks**: BFS (unweighted) or Dijkstra's algorithm (weighted).\n\n"
+                    + "### 3. Practical Code Example\n\n"
                     + "```java\n"
                     + "public class TwoSumSorted {\n"
                     + "    /**\n"
@@ -662,29 +709,27 @@ public class AiMentorService {
                     + "    }\n"
                     + "}\n"
                     + "```\n\n"
-                    + "### 4. Step-by-Step Walkthrough\n"
-                    + "1. Initialize two pointers at opposite extremes (`left = 0`, `right = length - 1`).\n"
-                    + "2. Because the array is sorted, if `sum < target`, incrementing `left` is the only move that can increase the sum.\n"
-                    + "3. Conversely, if `sum > target`, decrementing `right` decreases the sum.\n"
-                    + "4. Each iteration discards one candidate in $O(1)$ time, guaranteeing $O(n)$ termination with zero auxiliary memory.\n\n"
-                    + "### 5. Common Pitfalls\n"
-                    + "- Integer overflow when summing large integers (use `(long) a + b` if values approach $2^{31}-1$).\n"
-                    + "- Off-by-one bounds errors on loop conditions (`left < right` vs `left <= right`).\n\n"
-                    + "### 6. Suggested Practice\n"
-                    + "Try extending this pattern to 3Sum ($O(n^2)$) and Container With Most Water!";
+                    + "### 4. Step-by-Step Code Walkthrough\n\n"
+                    + "1. Start two pointers at opposite ends (`left = 0`, `right = length - 1`).\n"
+                    + "2. Because `numbers` is sorted, if `sum < target`, moving `left++` is the only move that increases the sum.\n"
+                    + "3. If `sum > target`, moving `right--` decreases the sum.\n"
+                    + "4. Each step eliminates one boundary element in $O(1)$ time, yielding $O(n)$ total time and $O(1)$ auxiliary space.\n\n"
+                    + "### 5. Cheat Sheet\n\n"
+                    + "- **Complexity**: $O(n)$ time, $O(1)$ space.\n"
+                    + "- **Common Pitfalls**: Integer overflow on `numbers[left] + numbers[right]` (cast to `long` for extreme inputs) and `left < right` vs `left <= right` bounds.\n"
+                    + "- **Next Practice**: Extend this pattern to 3Sum ($O(n^2)$) and Container With Most Water.";
         }
 
         // General Comprehensive Mentor Response
-        return "### 1. Understanding Your Question\n\n"
+        return "### 1. Understand & Clarify\n\n"
                 + "You asked: *\"" + message + "\"*\n\n"
-                + "Let's explore this thoroughly from an engineering and architectural perspective in the context of **" + language + "** and **" + learningContext + "**.\n\n"
-                + "### 2. Core Architectural & Conceptual Principles\n\n"
-                + "In production software systems, robust design requires balancing three fundamental pillars:\n"
-                + "1. **Maintainability & Modularity**: Keeping code decoupled, testable, and intuitive for new team members.\n"
-                + "2. **Algorithmic & Operational Efficiency**: Ensuring predictable execution profiles (minimizing $O(n)$ time complexity and resource leaks).\n"
-                + "3. **Failure Isolation & Resilience**: Anticipating network partitions, input boundary violations, and edge cases.\n\n"
-                + "### 3. Practical Implementation Example\n\n"
-                + "Here is how to structure a clean, idiomatic implementation in " + language + ":\n\n"
+                + "Let's examine this from an engineering and architectural perspective in **" + language + "** (**" + learningContext + "**).\n\n"
+                + "### 2. Explain the Concept\n\n"
+                + "In production software systems, dependable design balances three core pillars:\n"
+                + "1. **Maintainability & Modularity**: Keeping components decoupled, testable, and explicit about contracts.\n"
+                + "2. **Algorithmic & Operational Efficiency**: Maintaining predictable $O(n)$ or $O(\\log n)$ paths and bounded resource usage.\n"
+                + "3. **Failure Isolation & Resilience**: Validating inputs at boundaries and handling unexpected states gracefully.\n\n"
+                + "### 3. Practical Code Example\n\n"
                 + "```" + (language.toLowerCase().contains("java") ? "java" : (language.toLowerCase().contains("type") || language.toLowerCase().contains("react") ? "typescript" : "text")) + "\n"
                 + "// Production-grade idiomatic design pattern\n"
                 + "public class SolutionEngine {\n"
@@ -694,7 +739,6 @@ public class AiMentorService {
                 + "            throw new IllegalArgumentException(\"Context payload must not be null\");\n"
                 + "        }\n\n"
                 + "        try {\n"
-                + "            // 1. Process data with optimal time complexity\n"
                 + "            return processInternal(context);\n"
                 + "        } catch (Exception ex) {\n"
                 + "            logger.error(\"Operation failed safely: {}\", ex.getMessage());\n"
@@ -703,16 +747,14 @@ public class AiMentorService {
                 + "    }\n"
                 + "}\n"
                 + "```\n\n"
-                + "### 4. Step-by-Step Walkthrough\n"
-                + "1. **Validation at the Boundary**: Inputs are checked before any heavy computing begins, preventing `NullPointerException`s.\n"
-                + "2. **Encapsulation**: Internal business logic is isolated within `processInternal`, exposing only a clean public interface.\n"
-                + "3. **Error Boundaries**: Unhandled exceptions are caught, logged without leaking secrets, and transformed into structured error contracts.\n\n"
-                + "### 5. Common Traps & Antipatterns\n"
-                + "- **Premature Optimization**: Don't optimize before measuring with profiling tools.\n"
-                + "- **Ignoring Edge Cases**: Empty collections, null references, and concurrent writes are where 80% of production outages occur.\n\n"
-                + "### 6. Mentoring Recommendations & Next Steps\n"
-                + "- Would you like to dive deeper into testing strategies (e.g. Unit testing with JUnit/Jest or Integration testing)?\n"
-                + "- If you have a specific code snippet you are currently writing, paste it here and we can conduct an in-depth code review together!";
+                + "### 4. Step-by-Step Code Walkthrough\n\n"
+                + "1. **Validation at the Boundary**: `context` and its payload are verified up front to fail fast on invalid input.\n"
+                + "2. **Encapsulation**: Core business logic stays inside `processInternal(context)`, behind a clean public method.\n"
+                + "3. **Error Boundaries**: Exceptions are caught, logged without leaking secrets, and mapped to a structured result.\n\n"
+                + "### 5. Cheat Sheet\n\n"
+                + "- **Boundary Guards**: Check nulls, empty collections, and bounds early.\n"
+                + "- **Avoid Premature Optimization**: Measure before optimizing, and keep failure paths explicit.\n"
+                + "- **Next Step**: Share a specific code snippet or design requirement to walk through targeted edge cases and tests.";
     }
 
     public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
@@ -845,7 +887,7 @@ public class AiMentorService {
                                     "VALID",
                                     true,
                                     null,
-                                    "Java syntax automatically corrected and validated (Java 21 parser)"
+                                    "Java syntax automatically repaired and parsed with Java 21 grammar (syntax check only; not compiled or executed)"
                             ));
                         }
                     }
@@ -859,7 +901,7 @@ public class AiMentorService {
                             "INVALID",
                             false,
                             result.getMessage(),
-                            "Syntax warning: " + result.getMessage()
+                            "Syntax parse warning (not compiled or executed): " + result.getMessage()
                     ));
                 }
             }
@@ -882,16 +924,16 @@ public class AiMentorService {
         response.setValidationDetails(details);
         if (!hasJava) {
             response.setValidationStatus("NOT_CHECKED");
-            response.setValidationSummary("No Java code snippets present for syntax validation.");
+            response.setValidationSummary("No Java code snippets present for syntax parsing.");
         } else if (hasInvalid) {
             response.setValidationStatus("INVALID");
-            response.setValidationSummary("One or more Java code snippets contain syntax parse issues. Check the highlighted warnings.");
+            response.setValidationSummary("One or more Java code snippets contain syntax parse issues (syntax check only; not compiled or executed).");
         } else {
             response.setValidationStatus("VALID");
             if (anyCorrected) {
-                response.setValidationSummary("Java syntax was automatically repaired and validated with Java 21 parser.");
+                response.setValidationSummary("Java syntax was automatically repaired and parsed against Java 21 grammar (syntax check only; not compiled or executed).");
             } else {
-                response.setValidationSummary("All Java code snippets validated successfully against Java 21 syntax grammar.");
+                response.setValidationSummary("All Java code snippets parsed cleanly against Java 21 syntax grammar (syntax check only; not compiled or executed).");
             }
         }
     }
