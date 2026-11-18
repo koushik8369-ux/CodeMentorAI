@@ -293,11 +293,44 @@ Choose a quick starter topic above or type any coding question or snippet below!
     return parts.map((part, index) => {
       if (part.startsWith('```') && part.endsWith('```')) {
         const currentBlockIdx = codeBlockIndex++;
-        const validation = validationDetails?.find((v) => v.blockIndex === currentBlockIdx);
-        const lines = part.slice(3, -3).trim().split('\n');
-        const firstLine = lines[0].trim();
-        const codeLang = firstLine && !firstLine.includes(' ') ? firstLine : 'code';
-        const codeText = (codeLang === firstLine ? lines.slice(1) : lines).join('\n');
+        const rawValidation = validationDetails?.find((v) => v.blockIndex === currentBlockIdx);
+        const inner = part.slice(3, -3);
+        const firstNewlineIdx = inner.indexOf('\n');
+        let codeLang = 'code';
+        let codeText = inner.trim();
+
+        if (firstNewlineIdx !== -1) {
+          const headerLine = inner.slice(0, firstNewlineIdx).replace(/\r/g, '').trim();
+          const bodyContent = inner.slice(firstNewlineIdx + 1).replace(/^\r?\n+|\r?\n+$/g, '');
+          if (/^[a-zA-Z0-9_+-]+$/.test(headerLine)) {
+            codeLang = headerLine;
+            codeText = bodyContent;
+          } else if (headerLine === '') {
+            codeLang = 'code';
+            codeText = bodyContent;
+          } else {
+            codeLang = 'code';
+            codeText = inner.trim();
+          }
+        }
+
+        const normalizedLang = codeLang.toLowerCase();
+        const isExplicitNonJava =
+          normalizedLang !== 'code' &&
+          normalizedLang !== 'java' &&
+          normalizedLang !== 'java21' &&
+          normalizedLang !== 'java17';
+        const validation =
+          rawValidation && isExplicitNonJava && rawValidation.status !== 'NOT_CHECKED'
+            ? {
+                ...rawValidation,
+                status: 'NOT_CHECKED' as const,
+                isCorrected: false,
+                errorMessage: null,
+                validationSummary: `Syntax validation not applicable for ${codeLang} snippet`,
+              }
+            : rawValidation;
+
         const codeBlockId = `${messageId}-code-${index}`;
 
         return (
@@ -313,7 +346,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
                 {validation && validation.status === 'VALID' && (
                   <span
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                    title={validation.validationSummary || 'Java syntax parsed and verified using JavaParser (Java 21 grammar)'}
+                    title={validation.validationSummary || 'Java syntax parsed with JavaParser (Java 21 grammar; not compiled or executed)'}
                   >
                     <Check className="w-3 h-3 text-emerald-400" />
                     <span>{validation.isCorrected ? 'Syntax Repaired (Java 21)' : 'Syntax Validated (Java 21)'}</span>
@@ -322,7 +355,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
                 {validation && validation.status === 'INVALID' && (
                   <span
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                    title={validation.errorMessage || validation.validationSummary || 'JavaParser detected syntax errors'}
+                    title={validation.errorMessage || validation.validationSummary || 'JavaParser detected syntax issues'}
                   >
                     <AlertTriangle className="w-3 h-3 text-amber-400" />
                     <span>Syntax Warning: Parse issues</span>
@@ -331,7 +364,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
                 {validation && validation.status === 'NOT_CHECKED' && (
                   <span
                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-800/60 text-slate-400 border border-slate-700/60"
-                    title="Syntax validation applies specifically to Java snippets"
+                    title={validation.validationSummary || 'Syntax validation not applicable for this block'}
                   >
                     <span>Syntax check: N/A</span>
                   </span>

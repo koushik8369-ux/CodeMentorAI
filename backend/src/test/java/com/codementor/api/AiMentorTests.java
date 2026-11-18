@@ -991,4 +991,218 @@ public class AiMentorTests {
         org.junit.jupiter.api.Assertions.assertEquals("java", response.getValidationDetails().get(0).getLanguage());
         org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationDetails().get(0).getStatus());
     }
+
+    // =========================================================================
+    // FALSE-POSITIVE SYNTAX VALIDATION REGRESSION SUITE
+    // =========================================================================
+
+    @Test
+    @DisplayName("Regression 1: Standalone Java methods (regular, generic, annotated, default interface, constructor, multi-method) are VALID")
+    void regression_StandaloneJavaMethodsAreValid() {
+        // 1. Generic annotated standalone method
+        String genericAnnotatedMethod = "@Override\n"
+                + "public <T extends Comparable<T>> List<T> filterAndSort(List<T> items, Predicate<T> filter) {\n"
+                + "    return items.stream().filter(filter).sorted().toList();\n"
+                + "}";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(genericAnnotatedMethod).getStatus());
+
+        // 2. Multiple standalone methods in one block
+        String multiMethods = "public int numIslands(char[][] grid) {\n"
+                + "    int count = 0;\n"
+                + "    for (int r = 0; r < grid.length; r++) {\n"
+                + "        for (int c = 0; c < grid[0].length; c++) {\n"
+                + "            if (grid[r][c] == '1') { count++; dfs(grid, r, c); }\n"
+                + "        }\n"
+                + "    }\n"
+                + "    return count;\n"
+                + "}\n\n"
+                + "private void dfs(char[][] g, int r, int c) {\n"
+                + "    if (r < 0 || c < 0 || r >= g.length || c >= g[0].length || g[r][c] != '1') return;\n"
+                + "    g[r][c] = '0';\n"
+                + "    dfs(g, r + 1, c); dfs(g, r - 1, c); dfs(g, r, c + 1); dfs(g, r, c - 1);\n"
+                + "}";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(multiMethods).getStatus());
+
+        // 3. Interface default method
+        String defaultMethod = "default String formatDisplayName(String first, String last) {\n"
+                + "    return (first + \" \" + last).trim();\n"
+                + "}";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(defaultMethod).getStatus());
+
+        // 4. Standalone constructor
+        String constructorSnippet = "public PaymentService(PaymentGateway gateway) {\n"
+                + "    this.gateway = Objects.requireNonNull(gateway);\n"
+                + "}";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(constructorSnippet).getStatus());
+
+        // 5. Standalone method with imports inside ```java block via AiMentorService
+        String markdownWithStandaloneMethod = "Here is an example method:\n"
+                + "```java\n"
+                + "import java.util.*;\n\n"
+                + "public Optional<String> findFirstMatch(List<String> items, String prefix) {\n"
+                + "    return items.stream().filter(s -> s.startsWith(prefix)).findFirst();\n"
+                + "}\n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                markdownWithStandaloneMethod, "tencent/hy4", "SUCCESS", "Java", "Streams", null
+        );
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationDetails().get(0).getStatus());
+    }
+
+    @Test
+    @DisplayName("Regression 2: Comment-only Java blocks are marked NOT_CHECKED and never trigger INVALID or correction")
+    void regression_CommentOnlyJavaBlocksMarkedNotChecked() {
+        String markdown = "Placeholder block:\n"
+                + "```java\n"
+                + "// TODO: Implement binary search here\n"
+                + "/* Multi-line comment explaining edge cases */\n"
+                + "```";
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                markdown, "tencent/hy4", "SUCCESS", "Java", "DSA", null
+        );
+
+        int[] correctionAttempts = new int[]{0};
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+        };
+        com.codementor.api.service.AiMentorService spyService = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
+                correctionAttempts[0]++;
+                return "public class Dummy {}";
+            }
+        };
+
+        spyService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals(0, correctionAttempts[0], "Comment-only blocks must never trigger correction");
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(1, response.getValidationDetails().size());
+        com.codementor.api.dto.JavaCodeBlockValidation block = response.getValidationDetails().get(0);
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", block.getStatus());
+        org.junit.jupiter.api.Assertions.assertNull(block.getErrorMessage());
+        org.junit.jupiter.api.Assertions.assertFalse(block.isCorrected());
+    }
+
+    @Test
+    @DisplayName("Regression 3: Plain explanatory prose (untagged, text, pseudocode, or tagged java) is NOT_CHECKED and never sent to JavaParser")
+    void regression_PlainExplanatoryProseIsNotChecked() {
+        String markdown = "Overview:\n"
+                + "```text\n"
+                + "The public Service class calls the Repository interface to return an int count and String name.\n"
+                + "```\n\n"
+                + "Untagged steps:\n"
+                + "```\n"
+                + "Step 1: Initialize a HashMap for fast lookups.\n"
+                + "Step 2: Iterate through the array using a for loop.\n"
+                + "Time Complexity: O(n)\n"
+                + "```\n\n"
+                + "Prose mistakenly tagged java:\n"
+                + "```java\n"
+                + "Use constructor injection instead of field injection; it improves unit testability.\n"
+                + "```";
+
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                markdown, "tencent/hy4", "SUCCESS", "Java", "Architecture", null
+        );
+
+        int[] correctionAttempts = new int[]{0};
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+        };
+        com.codementor.api.service.AiMentorService spyService = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
+                correctionAttempts[0]++;
+                return brokenCode;
+            }
+        };
+
+        spyService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals(0, correctionAttempts[0], "Ordinary prose must never trigger Java syntax correction");
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(3, response.getValidationDetails().size());
+        for (com.codementor.api.dto.JavaCodeBlockValidation detail : response.getValidationDetails()) {
+            org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", detail.getStatus());
+            org.junit.jupiter.api.Assertions.assertNull(detail.getErrorMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("Regression 4: Non-Java languages (Python, SQL, JS, TS, Kotlin, Bash) are NOT_CHECKED")
+    void regression_NonJavaLanguagesNeverSentToJavaParser() {
+        String markdown = "```python\ndef add(a, b): return a + b\n```\n"
+                + "```sql\nSELECT id, name FROM users;\n```\n"
+                + "```javascript\nconst fn = (x) => x * 2;\n```\n"
+                + "```typescript\ninterface User { id: string; }\n```\n"
+                + "```kotlin\nfun greet(name: String) = \"Hello $name\"\n```";
+
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                markdown, "tencent/hy4", "SUCCESS", "Java", "Polyglot", null
+        );
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(5, response.getValidationDetails().size());
+        for (com.codementor.api.dto.JavaCodeBlockValidation detail : response.getValidationDetails()) {
+            org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", detail.getStatus());
+            org.junit.jupiter.api.Assertions.assertNull(detail.getErrorMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("Regression 5: Block indexes align 1:1 across inline blocks, comments, prose, standalone Java, interfaces, and Python")
+    void regression_CodeBlockIndexesAlignWithContent() {
+        String markdown = "Inline note: ```ArrayList``` is dynamic.\n\n"
+                + "```java\n// Comment-only placeholder\n```\n\n"
+                + "```java\npublic interface Repository<T> {\n    Optional<T> findById(Long id);\n}\n```\n\n"
+                + "```python\nprint('hello')\n```\n\n"
+                + "```java\npublic int sum(int[] nums) {\n    int total = 0;\n    for (int n : nums) total += n;\n    return total;\n}\n```";
+
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                markdown, "tencent/hy4", "SUCCESS", "Java", "Data Structures", null
+        );
+        aiMentorService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(5, response.getValidationDetails().size());
+
+        // Block 0: inline triple-backtick prose -> NOT_CHECKED
+        org.junit.jupiter.api.Assertions.assertEquals(0, response.getValidationDetails().get(0).getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", response.getValidationDetails().get(0).getStatus());
+
+        // Block 1: comment-only Java -> NOT_CHECKED
+        org.junit.jupiter.api.Assertions.assertEquals(1, response.getValidationDetails().get(1).getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", response.getValidationDetails().get(1).getStatus());
+
+        // Block 2: complete Java interface -> VALID
+        org.junit.jupiter.api.Assertions.assertEquals(2, response.getValidationDetails().get(2).getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationDetails().get(2).getStatus());
+
+        // Block 3: Python -> NOT_CHECKED
+        org.junit.jupiter.api.Assertions.assertEquals(3, response.getValidationDetails().get(3).getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("python", response.getValidationDetails().get(3).getLanguage());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", response.getValidationDetails().get(3).getStatus());
+
+        // Block 4: standalone Java method -> VALID
+        org.junit.jupiter.api.Assertions.assertEquals(4, response.getValidationDetails().get(4).getBlockIndex());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationDetails().get(4).getStatus());
+    }
 }

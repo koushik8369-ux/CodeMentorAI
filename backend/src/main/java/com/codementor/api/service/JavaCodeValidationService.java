@@ -20,15 +20,29 @@ public class JavaCodeValidationService {
 
     private static final Logger logger = LoggerFactory.getLogger(JavaCodeValidationService.class);
 
-    private static final Pattern CODE_BLOCK_PATTERN = Pattern.compile("```([a-zA-Z0-9_+-]*)[ \\t]*\\r?\\n([\\s\\S]*?)```");
+    private static final Pattern CODE_BLOCK_PATTERN = Pattern.compile("```([\\s\\S]*?)```");
+    private static final Pattern HEADER_LANG_PATTERN = Pattern.compile("^[a-zA-Z0-9_+-]+$");
+    private static final Pattern LINE_SEMICOLON_PATTERN = Pattern.compile(";\\s*$", Pattern.MULTILINE);
+    private static final Pattern JAVA_ANNOTATION_PATTERN = Pattern.compile("(?m)^\\s*@[A-Z][A-Za-z0-9_]*");
+    private static final Pattern JAVA_IMPORT_PKG_PATTERN = Pattern.compile("(?m)^\\s*(package|import)\\s+[a-zA-Z_][a-zA-Z0-9_.*]*\\s*;?");
+    private static final Pattern JAVA_MODIFIER_DECL_PATTERN = Pattern.compile("(?m)^\\s*(?:public|private|protected|static|final|abstract|synchronized|default|class|interface|record|enum)\\s+[A-Za-z_<]");
+    private static final Pattern JAVA_VAR_ASSIGN_PATTERN = Pattern.compile("(?m)^\\s*(?:final\\s+)?(?:int|long|double|float|boolean|char|byte|short|var|String|List|Map|Set)\\b[^\\n]*=");
+    private static final Pattern JAVA_CONTROL_PAREN_PATTERN = Pattern.compile("(?m)^\\s*(?:if|for|while|switch|catch)\\s*\\(");
+    private static final Pattern JAVA_RETURN_STMT_PATTERN = Pattern.compile("(?m)^\\s*return\\s+[^\\n.]+$");
+    private static final Pattern JAVA_CALL_STMT_PATTERN = Pattern.compile("(?m)^\\s*[a-zA-Z_][a-zA-Z0-9_.]*\\s*\\([^\\n]*\\)\\s*$");
+    private static final Pattern CONSTRUCTOR_NAME_PATTERN = Pattern.compile("(?m)^\\s*(?:@[A-Za-z0-9_.]*(?:\\([^)]*\\))?\\s*)*(?:(?:public|private|protected)\\s+)?([A-Z][A-Za-z0-9_]*)\\s*\\(");
 
-    private final JavaParser javaParser;
+    private final ParserConfiguration parserConfiguration;
 
     public JavaCodeValidationService() {
         ParserConfiguration configuration = new ParserConfiguration();
         configuration.setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_21);
         configuration.setAttributeComments(false);
-        this.javaParser = new JavaParser(configuration);
+        this.parserConfiguration = configuration;
+    }
+
+    private JavaParser createParser() {
+        return new JavaParser(parserConfiguration);
     }
 
     public static class ValidationResult {
@@ -110,7 +124,7 @@ public class JavaCodeValidationService {
     }
 
     /**
-     * Extracts all markdown code blocks (```lang ... ```) from the text.
+     * Extracts all markdown code blocks (```...```) consistently with frontend rendering.
      */
     public List<ExtractedBlock> extractCodeBlocks(String markdown) {
         List<ExtractedBlock> blocks = new ArrayList<>();
@@ -121,35 +135,48 @@ public class JavaCodeValidationService {
         Matcher matcher = CODE_BLOCK_PATTERN.matcher(markdown);
         int index = 0;
         while (matcher.find()) {
-            String lang = matcher.group(1) != null ? matcher.group(1).trim().toLowerCase() : "";
-            String code = matcher.group(2) != null ? matcher.group(2) : "";
+            String inner = matcher.group(1) != null ? matcher.group(1) : "";
+            String lang = "";
+            String code = inner;
+
+            int nlIdx = inner.indexOf('\n');
+            if (nlIdx != -1) {
+                String headerLine = inner.substring(0, nlIdx).replace("\r", "").trim();
+                String bodyContent = inner.substring(nlIdx + 1);
+                if (HEADER_LANG_PATTERN.matcher(headerLine).matches()) {
+                    lang = headerLine.toLowerCase();
+                    code = bodyContent;
+                } else if (headerLine.isEmpty()) {
+                    lang = "";
+                    code = bodyContent;
+                }
+            }
+
             blocks.add(new ExtractedBlock(index++, lang, code, matcher.start(), matcher.end(), matcher.group(0)));
         }
         return blocks;
     }
 
     /**
-     * Determines if a code block is identified as Java code.
+     * Determines if a code block should be evaluated as Java syntax.
+     * Explicit non-Java languages, comment-only blocks, and ordinary prose return false.
      */
     public boolean isJavaBlock(String language, String conversationLanguage, String code) {
-        if (language != null && !language.isBlank()) {
-            String l = language.toLowerCase().trim();
-            if ("java".equals(l)) {
-                return true;
-            }
-            // Explicit non-Java languages must not be validated with JavaParser
-            if ("python".equals(l) || "py".equals(l) || "javascript".equals(l) || "js".equals(l)
-                    || "typescript".equals(l) || "ts".equals(l) || "sql".equals(l) || "html".equals(l)
-                    || "css".equals(l) || "bash".equals(l) || "sh".equals(l) || "json".equals(l)
-                    || "c".equals(l) || "cpp".equals(l) || "csharp".equals(l) || "cs".equals(l)
-                    || "go".equals(l) || "rust".equals(l) || "ruby".equals(l) || "php".equals(l)) {
-                return false;
-            }
+        if (code == null || code.isBlank()) {
+            return false;
         }
 
-        // If no explicit language tag is provided, check conversation context
+        if (language != null && !language.isBlank()) {
+            String l = language.toLowerCase().trim();
+            if ("java".equals(l) || "java21".equals(l) || "java17".equals(l)) {
+                return !isOnlyComments(code) && !isOrdinaryProse(code);
+            }
+            // Any other explicit language tag (python, sql, js, ts, text, pseudocode, etc.) is NOT Java
+            return false;
+        }
+
+        // Untagged code block: only evaluate if conversation context is Java AND content is genuinely Java code
         if (conversationLanguage != null && conversationLanguage.equalsIgnoreCase("java")) {
-            // Heuristic check to verify it looks like Java code (not plain text or SQL)
             return looksLikeJava(code);
         }
 
@@ -157,17 +184,75 @@ public class JavaCodeValidationService {
     }
 
     private boolean looksLikeJava(String code) {
-        if (code == null || code.isBlank()) return false;
-        String trimmed = code.trim();
-        return trimmed.contains("public ") || trimmed.contains("private ") || trimmed.contains("protected ")
-                || trimmed.contains("class ") || trimmed.contains("interface ") || trimmed.contains("record ")
-                || trimmed.contains("void ") || trimmed.contains("int ") || trimmed.contains("String ")
-                || trimmed.contains("System.out") || trimmed.contains("import java.");
+        if (code == null || code.isBlank() || isOnlyComments(code) || isOrdinaryProse(code)) {
+            return false;
+        }
+        String body = stripComments(code);
+
+        // Exclude obvious non-Java syntax constructs
+        String lower = body.toLowerCase();
+        if (lower.startsWith("select ") || lower.startsWith("create table") || lower.startsWith("insert into")
+                || lower.startsWith("def ") || body.contains("console.log(") || body.contains("function ")
+                || (body.startsWith("{") && body.contains("\":"))) {
+            return false;
+        }
+
+        boolean hasJavaKeyword = JAVA_MODIFIER_DECL_PATTERN.matcher(body).find()
+                || JAVA_IMPORT_PKG_PATTERN.matcher(body).find()
+                || JAVA_ANNOTATION_PATTERN.matcher(body).find()
+                || body.contains("System.out.")
+                || JAVA_VAR_ASSIGN_PATTERN.matcher(body).find();
+
+        boolean hasSyntaxDelimiter = body.contains("{") || body.contains("}") || LINE_SEMICOLON_PATTERN.matcher(body).find();
+        return hasJavaKeyword && hasSyntaxDelimiter;
+    }
+
+    public boolean isOnlyComments(String code) {
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        return stripComments(code).isEmpty();
+    }
+
+    public boolean isOrdinaryProse(String code) {
+        String body = stripComments(code);
+        if (body.isEmpty()) {
+            return false;
+        }
+
+        boolean hasBraces = body.contains("{") || body.contains("}");
+        boolean hasArrow = body.contains("->");
+        boolean hasLineSemicolon = LINE_SEMICOLON_PATTERN.matcher(body).find();
+        boolean hasAnnotation = JAVA_ANNOTATION_PATTERN.matcher(body).find();
+        boolean hasJavaImportOrPkg = JAVA_IMPORT_PKG_PATTERN.matcher(body).find();
+        boolean hasSystemOut = body.contains("System.out.") || body.contains("System.err.");
+
+        if (hasBraces || hasArrow || hasLineSemicolon || hasAnnotation || hasJavaImportOrPkg || hasSystemOut) {
+            return false;
+        }
+
+        boolean hasJavaModifierDecl = JAVA_MODIFIER_DECL_PATTERN.matcher(body).find();
+        boolean hasJavaVarAssign = JAVA_VAR_ASSIGN_PATTERN.matcher(body).find();
+        boolean hasControlWithParen = JAVA_CONTROL_PAREN_PATTERN.matcher(body).find();
+        boolean hasLowercaseReturnStmt = JAVA_RETURN_STMT_PATTERN.matcher(body).find();
+        boolean hasMethodCallParen = JAVA_CALL_STMT_PATTERN.matcher(body).find();
+
+        return !(hasJavaModifierDecl || hasJavaVarAssign || hasControlWithParen || hasLowercaseReturnStmt || hasMethodCallParen);
+    }
+
+    private String stripComments(String code) {
+        if (code == null) {
+            return "";
+        }
+        String noLineComments = code.replaceAll("//.*", "");
+        String noBlockComments = noLineComments.replaceAll("/\\*[\\s\\S]*?\\*/", "");
+        return noBlockComments.trim();
     }
 
     /**
      * Validates syntax of Java code using JavaParser with Java 21 grammar.
-     * Evaluates compilation units, class bodies, method declarations, and statement blocks.
+     * Evaluates compilation units, standalone methods, constructors, interface methods, and statement blocks.
+     * Comment-only blocks and ordinary explanatory prose return NOT_CHECKED without invoking JavaParser.
      */
     public ValidationResult validateJavaSnippet(String code) {
         if (code == null || code.isBlank()) {
@@ -179,42 +264,62 @@ public class JavaCodeValidationService {
             return ValidationResult.notChecked("Code block contains only comments");
         }
 
-        // Attempt 1: Direct compilation unit (classes, interfaces, records, enums, full files)
+        if (isOrdinaryProse(cleaned)) {
+            return ValidationResult.notChecked("Plain explanatory text (not Java code)");
+        }
+
+        JavaParser parser = createParser();
+
         try {
-            ParseResult<CompilationUnit> cuResult = javaParser.parse(cleaned);
+            // Attempt 1: Direct compilation unit (classes, interfaces, records, enums, full files)
+            ParseResult<CompilationUnit> cuResult = parser.parse(cleaned);
             if (cuResult.isSuccessful() && cuResult.getProblems().isEmpty()) {
                 return ValidationResult.valid("Java syntax parsed successfully (Java 21 grammar)");
             }
 
-            // Attempt 2: Method / Member declarations wrapped inside a class
-            // Handles code like: public int twoSum(...) { ... }
+            // Attempt 2: Method / Member declarations wrapped inside a temporary class
             String wrappedInClass = buildWrappedClass(cleaned);
-            ParseResult<CompilationUnit> classResult = javaParser.parse(wrappedInClass);
+            ParseResult<CompilationUnit> classResult = parser.parse(wrappedInClass);
             if (classResult.isSuccessful() && classResult.getProblems().isEmpty()) {
                 return ValidationResult.valid("Java method/declaration syntax parsed successfully (Java 21 grammar)");
             }
 
-            // Attempt 3: Statements inside a method
-            // Handles code like: List<String> list = new ArrayList<>(); System.out.println(list);
+            // Attempt 3: Interface default / abstract method declarations wrapped inside a temporary interface
+            String wrappedInInterface = buildWrappedInterface(cleaned);
+            ParseResult<CompilationUnit> interfaceResult = parser.parse(wrappedInInterface);
+            if (interfaceResult.isSuccessful() && interfaceResult.getProblems().isEmpty()) {
+                return ValidationResult.valid("Java interface method syntax parsed successfully (Java 21 grammar)");
+            }
+
+            // Attempt 4: Standalone constructor wrapped in a class with matching name
+            String constructorClassName = detectConstructorName(cleaned);
+            if (constructorClassName != null) {
+                String wrappedConstructor = buildWrappedNamedClass(cleaned, constructorClassName);
+                ParseResult<CompilationUnit> ctorResult = parser.parse(wrappedConstructor);
+                if (ctorResult.isSuccessful() && ctorResult.getProblems().isEmpty()) {
+                    return ValidationResult.valid("Java constructor syntax parsed successfully (Java 21 grammar)");
+                }
+            }
+
+            // Attempt 5: Statements/expressions inside a method
             String wrappedInMethod = buildWrappedMethod(cleaned);
-            ParseResult<CompilationUnit> methodResult = javaParser.parse(wrappedInMethod);
+            ParseResult<CompilationUnit> methodResult = parser.parse(wrappedInMethod);
             if (methodResult.isSuccessful() && methodResult.getProblems().isEmpty()) {
                 return ValidationResult.valid("Java statement/block syntax parsed successfully (Java 21 grammar)");
             }
 
-            // All parsing attempts failed; collect problems from original compilation unit parse
-            List<Problem> problems = cuResult.getProblems();
-            if (!problems.isEmpty()) {
-                Problem first = problems.get(0);
-                String msg = sanitizeProblemMessage(first.getMessage());
-                return ValidationResult.invalid(msg);
+            // Prefer the most relevant parse error diagnostic
+            boolean declaresTopLevelType = Pattern.compile("\\b(class|interface|record|enum)\\s+[A-Za-z_]").matcher(cleaned).find();
+            if (!declaresTopLevelType && !classResult.getProblems().isEmpty()) {
+                return ValidationResult.invalid(sanitizeProblemMessage(classResult.getProblems().get(0).getMessage()));
             }
 
-            // Fallback to method-level problem message
+            if (!cuResult.getProblems().isEmpty()) {
+                return ValidationResult.invalid(sanitizeProblemMessage(cuResult.getProblems().get(0).getMessage()));
+            }
+
             if (!methodResult.getProblems().isEmpty()) {
-                Problem first = methodResult.getProblems().get(0);
-                String msg = sanitizeProblemMessage(first.getMessage());
-                return ValidationResult.invalid(msg);
+                return ValidationResult.invalid(sanitizeProblemMessage(methodResult.getProblems().get(0).getMessage()));
             }
 
             return ValidationResult.invalid("Syntax parsing error detected in Java code snippet");
@@ -228,13 +333,25 @@ public class JavaCodeValidationService {
         }
     }
 
-    private boolean isOnlyComments(String code) {
-        String noLineComments = code.replaceAll("//.*", "");
-        String noBlockComments = noLineComments.replaceAll("/\\*[\\s\\S]*?\\*/", "");
-        return noBlockComments.trim().isEmpty();
+    private String detectConstructorName(String code) {
+        String body = stripComments(code);
+        Matcher m = CONSTRUCTOR_NAME_PATTERN.matcher(body);
+        if (m.find()) {
+            String candidate = m.group(1);
+            if (candidate != null && !candidate.isBlank()
+                    && !"String".equals(candidate) && !"Integer".equals(candidate)
+                    && !"List".equals(candidate) && !"Map".equals(candidate) && !"Set".equals(candidate)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 
     private String buildWrappedClass(String code) {
+        return buildWrappedNamedClass(code, "__CodeMentorSnippetWrapper__");
+    }
+
+    private String buildWrappedNamedClass(String code, String className) {
         List<String> imports = new ArrayList<>();
         StringBuilder body = new StringBuilder();
 
@@ -251,7 +368,30 @@ public class JavaCodeValidationService {
         for (String imp : imports) {
             sb.append(imp).append("\n");
         }
-        sb.append("class __CodeMentorSnippetWrapper__ {\n");
+        sb.append("class ").append(className).append(" {\n");
+        sb.append(body);
+        sb.append("\n}\n");
+        return sb.toString();
+    }
+
+    private String buildWrappedInterface(String code) {
+        List<String> imports = new ArrayList<>();
+        StringBuilder body = new StringBuilder();
+
+        for (String line : code.split("\\r?\\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("package ") || trimmed.startsWith("import ")) {
+                imports.add(trimmed);
+            } else {
+                body.append(line).append("\n");
+            }
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (String imp : imports) {
+            sb.append(imp).append("\n");
+        }
+        sb.append("interface __CodeMentorSnippetInterfaceWrapper__ {\n");
         sb.append(body);
         sb.append("\n}\n");
         return sb.toString();

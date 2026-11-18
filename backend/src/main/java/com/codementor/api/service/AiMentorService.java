@@ -783,19 +783,40 @@ public class AiMentorService {
             boolean isJava = javaCodeValidationService.isJavaBlock(block.getLanguage(), conversationLanguage, block.getCode());
             if (!isJava) {
                 String lang = (block.getLanguage() != null && !block.getLanguage().isBlank()) ? block.getLanguage() : "text";
+                String summary;
+                if (javaCodeValidationService.isOnlyComments(block.getCode())) {
+                    summary = "Code block contains only comments (syntax validation not applicable)";
+                } else if (("java".equalsIgnoreCase(lang) || "text".equalsIgnoreCase(lang)) && javaCodeValidationService.isOrdinaryProse(block.getCode())) {
+                    summary = "Plain explanatory text (syntax validation not applicable)";
+                } else {
+                    summary = "Syntax validation not applicable for " + lang + " snippet";
+                }
                 details.add(new JavaCodeBlockValidation(
                         block.getIndex(),
                         lang,
                         "NOT_CHECKED",
                         false,
                         null,
-                        "Syntax validation not applicable for " + lang + " snippet"
+                        summary
+                ));
+                continue;
+            }
+
+            JavaCodeValidationService.ValidationResult result = javaCodeValidationService.validateJavaSnippet(block.getCode());
+
+            if ("NOT_CHECKED".equals(result.getStatus())) {
+                details.add(new JavaCodeBlockValidation(
+                        block.getIndex(),
+                        "java",
+                        "NOT_CHECKED",
+                        false,
+                        null,
+                        result.getMessage()
                 ));
                 continue;
             }
 
             hasJava = true;
-            JavaCodeValidationService.ValidationResult result = javaCodeValidationService.validateJavaSnippet(block.getCode());
 
             if (result.isValid()) {
                 details.add(new JavaCodeBlockValidation(
