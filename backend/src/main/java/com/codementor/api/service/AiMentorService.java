@@ -102,10 +102,11 @@ public class AiMentorService {
 
             // If we successfully received AI content from primary or alternative model:
             if (aiText != null && !aiText.isBlank() && !"null".equalsIgnoreCase(aiText.trim())) {
+                String normalizedText = enforceFiveSectionStructure(aiText.trim());
                 String notice = !actualModel.equalsIgnoreCase(primaryModel)
                         ? "Primary model " + primaryModel + " returned provider failure (HTTP 502). Successfully failed over to " + actualModel + "."
                         : null;
-                AiMentorResponse response = new AiMentorResponse(aiText.trim(), actualModel, "SUCCESS", lang, context, notice);
+                AiMentorResponse response = new AiMentorResponse(normalizedText, actualModel, "SUCCESS", lang, context, notice);
                 validateAndEnrichResponse(response, actualModel, lang);
                 return response;
             }
@@ -505,16 +506,236 @@ public class AiMentorService {
                 + "- **Structured concurrency** (`StructuredTaskScope`, JEP 453) is a **preview feature in Java 21** (requires `--enable-preview` in Java 21).\n"
                 + "- **Static Syntax vs. Execution Honesty**: Never claim that provided code was compiled or executed unless an actual compiler or runtime ran it. CodeMentor AI checks Java snippets solely via static syntax parsing (JavaParser).\n\n"
                 + "STRUCTURED RESPONSE STYLE FOR TECHNICAL & PROGRAMMING QUESTIONS:\n"
-                + "When answering coding or technical queries, always follow this clear, 5-section structured format:\n"
-                + "1. **Understand & Clarify**: Briefly validate the core problem, question, or requirements.\n"
-                + "2. **Explain the Concept**: Explain the underlying computer science, language version semantics, or architectural mechanism clearly with helpful intuition.\n"
-                + "3. **Practical Code Example**: Provide clean, idiomatic, syntactically valid, and nicely formatted code using markdown code blocks.\n"
-                + "4. **Step-by-Step Code Walkthrough**: Explain key lines, design trade-offs, and behavior step by step.\n"
-                + "5. **Cheat Sheet**: Provide a scannable summary of key rules, version/complexity notes, common pitfalls, and next steps.\n\n"
+                + "When answering coding or technical queries, ALWAYS use STRICTLY these exact 5 top-level numbered markdown headings (`### 1.` through `### 5.`) and NO additional top-level numbered sections (`6.`, `7.`, etc. are forbidden):\n"
+                + "### 1. Understand & Clarify\n"
+                + "Briefly validate the core problem, question, or requirements.\n"
+                + "### 2. Explain the Concept\n"
+                + "Explain the underlying computer science, language version semantics, comparisons, or architectural mechanism clearly. Put subtopics as unnumbered `#### Subheading` headings inside this section—never as new numbered sections.\n"
+                + "### 3. Practical Code Example\n"
+                + "Provide clean, idiomatic, syntactically valid, complete code inside fenced markdown code blocks (` ```java `). Use inline backticks (`` `...` ``) when citing short fragments or single lines inside prose.\n"
+                + "### 4. Step-by-Step Code Walkthrough\n"
+                + "Explain key lines, design trade-offs, and behavior step by step.\n"
+                + "### 5. Cheat Sheet\n"
+                + "Summarize key rules, version/complexity notes, common pitfalls, and recommended next steps using `####` subsections or bullets.\n\n"
                 + "TONE & BEHAVIOR:\n"
                 + "- Warm, encouraging, and collaborative.\n"
                 + "- Speak as an experienced colleague mentoring someone who wants to achieve technical mastery.\n"
                 + "- Never be condescending; break down complex ideas with clarity.";
+    }
+
+    private static final java.util.regex.Pattern TOP_LEVEL_MD_HEADING_PATTERN =
+            java.util.regex.Pattern.compile("^#{1,4}\\s*(\\d+)\\.\\s+(.+?)\\s*$");
+    private static final java.util.regex.Pattern TOP_LEVEL_BOLD_HEADING_PATTERN =
+            java.util.regex.Pattern.compile("^\\*\\*(\\d+)\\.\\s+([^\\n*]+?)\\*\\*:?\\s*$");
+    private static final java.util.regex.Pattern TOP_LEVEL_LIST_SECTION_PATTERN =
+            java.util.regex.Pattern.compile("^(\\d+)\\.\\s+\\*\\*([^\\n*]+?)\\*\\*:?\\s*(.*)$");
+
+    private static final String[] CANONICAL_SECTION_TITLES = {
+            "Understand & Clarify",
+            "Explain the Concept",
+            "Practical Code Example",
+            "Step-by-Step Code Walkthrough",
+            "Cheat Sheet"
+    };
+
+    /**
+     * Ensures multi-section AI technical responses conform strictly to the 5 canonical numbered
+     * sections (1. Understand & Clarify .. 5. Cheat Sheet) without creating extra top-level
+     * numbered sections (6., 7., ..., 12.), while preserving code blocks and subheadings as ####.
+     */
+    public String enforceFiveSectionStructure(String content) {
+        if (content == null || content.isBlank()) {
+            return content;
+        }
+
+        String[] lines = content.split("\\r?\\n", -1);
+        record ParsedSection(int number, String title, List<String> bodyLines) {}
+
+        List<String> preamble = new ArrayList<>();
+        List<ParsedSection> sections = new ArrayList<>();
+        ParsedSection current = null;
+        boolean inCodeBlock = false;
+
+        // First pass: check whether response uses top-level markdown/bold headings vs numbered bold list headings
+        int mdOrBoldCount = 0;
+        int listSectionCount = 0;
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("```")) {
+                inCodeBlock = !inCodeBlock;
+                continue;
+            }
+            if (inCodeBlock) continue;
+            if (TOP_LEVEL_MD_HEADING_PATTERN.matcher(trimmed).matches()
+                    || TOP_LEVEL_BOLD_HEADING_PATTERN.matcher(trimmed).matches()) {
+                mdOrBoldCount++;
+            } else if (TOP_LEVEL_LIST_SECTION_PATTERN.matcher(line).matches()) {
+                listSectionCount++;
+            }
+        }
+
+        boolean parseBoldListSections = mdOrBoldCount < 2 && listSectionCount >= 4;
+        inCodeBlock = false;
+
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("```")) {
+                inCodeBlock = !inCodeBlock;
+                if (current != null) current.bodyLines().add(line);
+                else preamble.add(line);
+                continue;
+            }
+
+            if (!inCodeBlock) {
+                java.util.regex.Matcher mdMatcher = TOP_LEVEL_MD_HEADING_PATTERN.matcher(trimmed);
+                java.util.regex.Matcher boldMatcher = TOP_LEVEL_BOLD_HEADING_PATTERN.matcher(trimmed);
+                if (mdMatcher.matches()) {
+                    int num = Integer.parseInt(mdMatcher.group(1));
+                    String title = mdMatcher.group(2).replaceAll("\\*\\*", "").trim();
+                    current = new ParsedSection(num, title, new ArrayList<>());
+                    sections.add(current);
+                    continue;
+                }
+                if (boldMatcher.matches()) {
+                    int num = Integer.parseInt(boldMatcher.group(1));
+                    String title = boldMatcher.group(2).trim();
+                    current = new ParsedSection(num, title, new ArrayList<>());
+                    sections.add(current);
+                    continue;
+                }
+                if (parseBoldListSections) {
+                    java.util.regex.Matcher listMatcher = TOP_LEVEL_LIST_SECTION_PATTERN.matcher(line);
+                    if (listMatcher.matches()) {
+                        int num = Integer.parseInt(listMatcher.group(1));
+                        String title = listMatcher.group(2).trim();
+                        String rest = listMatcher.group(3) != null ? listMatcher.group(3).trim() : "";
+                        current = new ParsedSection(num, title, new ArrayList<>());
+                        if (!rest.isEmpty()) {
+                            current.bodyLines().add(rest);
+                        }
+                        sections.add(current);
+                        continue;
+                    }
+                }
+            }
+
+            if (current != null) {
+                current.bodyLines().add(line);
+            } else {
+                preamble.add(line);
+            }
+        }
+
+        // Leave conversational/short/non-sectioned responses completely untouched
+        if (sections.size() < 2) {
+            return content;
+        }
+
+        // Check if already strictly 5 canonical numbered sections 1..5
+        if (sections.size() == 5) {
+            boolean alreadyCanonical = true;
+            for (int i = 0; i < 5; i++) {
+                if (sections.get(i).number() != i + 1
+                        || !sections.get(i).title().equalsIgnoreCase(CANONICAL_SECTION_TITLES[i])) {
+                    alreadyCanonical = false;
+                    break;
+                }
+            }
+            if (alreadyCanonical) {
+                return content;
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        List<StringBuilder> buckets = new ArrayList<>(5);
+        for (int i = 0; i < 5; i++) {
+            buckets.add(new StringBuilder());
+        }
+
+        String preambleText = String.join("\n", preamble).trim();
+        if (!preambleText.isEmpty()) {
+            buckets.get(0).append(preambleText).append("\n\n");
+        }
+
+        int lastBucket = 1;
+        for (ParsedSection sec : sections) {
+            String body = String.join("\n", sec.bodyLines()).trim();
+            int bucket = classifySectionBucket(sec.number(), sec.title(), body, lastBucket);
+            if (bucket >= lastBucket || bucket == 3 || bucket == 4) {
+                lastBucket = Math.max(lastBucket, bucket);
+            }
+
+            StringBuilder target = buckets.get(bucket - 1);
+            String cleanTitle = sec.title().replaceAll(":$", "").trim();
+            String canonical = CANONICAL_SECTION_TITLES[bucket - 1];
+            boolean matchesCanonicalExactly = cleanTitle.equalsIgnoreCase(canonical)
+                    || cleanTitle.toLowerCase().startsWith(canonical.toLowerCase());
+
+            if (!matchesCanonicalExactly && !cleanTitle.isEmpty()) {
+                target.append("#### ").append(cleanTitle).append("\n\n");
+            } else if (cleanTitle.length() > canonical.length() + 2
+                    && cleanTitle.toLowerCase().startsWith(canonical.toLowerCase())) {
+                String suffix = cleanTitle.substring(canonical.length()).replaceAll("^[:\\s-]+", "").trim();
+                if (!suffix.isEmpty()) {
+                    target.append("#### ").append(suffix).append("\n\n");
+                }
+            }
+
+            if (!body.isEmpty()) {
+                target.append(body).append("\n\n");
+            }
+        }
+
+        String[] defaultFillers = {
+                "Clarifying the core programming question, constraints, and engineering goals.",
+                "Review the core concepts, design rationale, and trade-offs detailed below.",
+                "Refer to the idiomatic pattern and walkthrough points below.",
+                "Trace each step of the implementation and data flow in the code example above.",
+                "- Review edge cases, boundary inputs, and complexity trade-offs before finalizing."
+        };
+
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < 5; i++) {
+            if (i > 0) {
+                out.append("\n");
+            }
+            out.append("### ").append(i + 1).append(". ").append(CANONICAL_SECTION_TITLES[i]).append("\n\n");
+            String bucketBody = buckets.get(i).toString().trim();
+            if (bucketBody.isEmpty()) {
+                out.append(defaultFillers[i]).append("\n");
+            } else {
+                out.append(bucketBody).append("\n");
+            }
+        }
+        return out.toString().trim();
+    }
+
+    private int classifySectionBucket(int number, String title, String body, int lastBucket) {
+        String lower = title != null ? title.toLowerCase() : "";
+
+        if (lower.matches(".*\\b(understand|clarif|problem statement|overview|introduction|goal|requirement|what is)\\b.*")) {
+            return 1;
+        }
+        if (lower.matches(".*\\b(walkthrough|step-by-step|step by step|line-by-line|execution flow|trace|how it executes|dry run)\\b.*")) {
+            return 4;
+        }
+        if (lower.matches(".*\\b(cheat sheet|summary|takeaway|pitfall|mistake|antipattern|best practice|complexity|next step|interview|recap|conclusion|reference|comparison table|testing|improvements)\\b.*")) {
+            return 5;
+        }
+        if (lower.matches(".*\\b(practical|code example|implementation|sample code|java example|example solution|working code)\\b.*")
+                || (lower.contains("example") && body.contains("```"))) {
+            return 3;
+        }
+        if (lower.matches(".*\\b(explain|concept|how it works|mechanism|theory|principle|vs\\.?|comparison|constructor|field|setter|two pointer|sliding window|deep dive|when to use|advantage|disadvantage|benefit|drawback)\\b.*")) {
+            return 2;
+        }
+        if (body.contains("```") && lastBucket < 3) {
+            return 3;
+        }
+        if (number >= 6) {
+            return 5;
+        }
+        return Math.min(5, Math.max(lastBucket, number));
     }
 
     private String generateFallbackMentorResponse(String message, String language, String learningContext) {
@@ -870,12 +1091,13 @@ public class AiMentorService {
                         result.getMessage()
                 ));
             } else {
-                // Attempt single correction if API is configured
+                // Attempt single correction ONLY for genuinely invalid syntax (never reached for NOT_CHECKED fragments)
                 boolean correctedSuccess = false;
                 String correctedCode = null;
                 if (openRouterConfig.isApiKeyConfigured()) {
                     correctedCode = requestSyntaxCorrection(model, block.getCode(), result.getMessage());
-                    if (correctedCode != null && !correctedCode.isBlank()) {
+                    if (correctedCode != null && !correctedCode.isBlank()
+                            && !correctedCode.trim().equals(block.getCode().trim())) {
                         JavaCodeValidationService.ValidationResult recheck = javaCodeValidationService.validateJavaSnippet(correctedCode);
                         if (recheck.isValid()) {
                             correctedSuccess = true;
@@ -887,7 +1109,7 @@ public class AiMentorService {
                                     "VALID",
                                     true,
                                     null,
-                                    "Java syntax automatically repaired and parsed with Java 21 grammar (syntax check only; not compiled or executed)"
+                                    "Java syntax automatically repaired from original snippet and parsed with Java 21 grammar (syntax check only; not compiled or executed)"
                             ));
                         }
                     }

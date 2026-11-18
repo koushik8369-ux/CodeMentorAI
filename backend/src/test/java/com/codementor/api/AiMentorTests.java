@@ -1371,4 +1371,302 @@ public class AiMentorTests {
                 mixedResp.getValidationSummary().toLowerCase().contains("not compiled or executed")
         );
     }
+
+    // =========================================================================
+    // ISSUE 1, 2 & 3 REGRESSION SUITE: PARTIAL FRAGMENTS & STRICT 5-SECTION LIVE OUTPUT
+    // =========================================================================
+
+    @Test
+    @DisplayName("Issue 1 & 3: Complete class/method/statement/expression are VALID; partial control-flow/constructor fragments, comments, prose, non-Java are NOT_CHECKED; malformed complete class is INVALID")
+    void regression_PartialFragmentsVsCompleteConstructsAndMalformedClass() {
+        // 1. Complete Java class -> VALID
+        String completeClass = "public class OrderService {\n"
+                + "    private final OrderRepository repo;\n"
+                + "    public OrderService(OrderRepository repo) { this.repo = repo; }\n"
+                + "    public void save(String id) { repo.persist(id); }\n"
+                + "}";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(completeClass).getStatus());
+
+        // 2. Complete standalone method -> VALID
+        String completeMethod = "public int maxSubarrayLen(int[] nums, int target) {\n"
+                + "    int left = 0, sum = 0, best = Integer.MAX_VALUE;\n"
+                + "    for (int right = 0; right < nums.length; right++) {\n"
+                + "        sum += nums[right];\n"
+                + "        while (sum >= target) {\n"
+                + "            best = Math.min(best, right - left + 1);\n"
+                + "            sum -= nums[left++];\n"
+                + "        }\n"
+                + "    }\n"
+                + "    return best == Integer.MAX_VALUE ? 0 : best;\n"
+                + "}";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(completeMethod).getStatus());
+
+        // 3. Valid Java statement -> VALID when safely wrapped
+        String validStatement = "int write = 0;\nnums[write++] = nums[read];";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(validStatement).getStatus());
+
+        // 4. Valid Java expression -> VALID
+        String validExpression = "items.stream().filter(s -> !s.isBlank()).toList()";
+        org.junit.jupiter.api.Assertions.assertEquals("VALID",
+                javaCodeValidationService.validateJavaSnippet(validExpression).getStatus());
+
+        // 5. Partial Java control-flow fragments (exact production examples) -> NOT_CHECKED
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet("for (int read = 0; read < nums.length; read++)").getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet("if (nums[read] != 0)").getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet("while (sum >= target)").getStatus());
+
+        // 6. Incomplete constructor declarations -> NOT_CHECKED
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet("public OrderService(...)").getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet("public OrderService(OrderRepository repo)").getStatus());
+
+        // 7. Comment-only block -> NOT_CHECKED
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet("// Move slow pointer forward").getStatus());
+
+        // 8. Ordinary prose -> NOT_CHECKED
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED",
+                javaCodeValidationService.validateJavaSnippet("Use two pointers when the array is sorted or monotonic.").getStatus());
+
+        // 9. Explicit Python/SQL/Bash blocks -> NOT_CHECKED
+        org.junit.jupiter.api.Assertions.assertFalse(javaCodeValidationService.isJavaBlock("python", "Java", "for i in range(len(nums)): pass"));
+        org.junit.jupiter.api.Assertions.assertFalse(javaCodeValidationService.isJavaBlock("sql", "Java", "SELECT COUNT(*) FROM orders;"));
+        org.junit.jupiter.api.Assertions.assertFalse(javaCodeValidationService.isJavaBlock("bash", "Java", "mvn -f backend/pom.xml test"));
+
+        // 10. Genuinely malformed complete Java class -> INVALID
+        String malformedCompleteClass = "public class BrokenOrderService {\n"
+                + "    public void saveOrder(String id {\n"
+                + "        int count = ;\n"
+                + "    }\n"
+                + "}";
+        org.junit.jupiter.api.Assertions.assertEquals("INVALID",
+                javaCodeValidationService.validateJavaSnippet(malformedCompleteClass).getStatus());
+    }
+
+    @Test
+    @DisplayName("Issue 1.4 & 1.6: Auto-repair must NEVER modify or convert incomplete fragments into VALID results")
+    void regression_AutoRepairNeverRunsOnIncompleteFragments() {
+        String responseWithFragments = "Constructor signature:\n"
+                + "```java\n"
+                + "public OrderService(...)\n"
+                + "```\n\n"
+                + "Loop header:\n"
+                + "```java\n"
+                + "for (int read = 0; read < nums.length; read++)\n"
+                + "```\n\n"
+                + "Branch condition:\n"
+                + "```java\n"
+                + "if (nums[read] != 0)\n"
+                + "```\n\n"
+                + "Sliding window shrink condition:\n"
+                + "```java\n"
+                + "while (sum >= target)\n"
+                + "```\n\n"
+                + "Complete class:\n"
+                + "```java\n"
+                + "public class OrderService {\n"
+                + "    public void process() { System.out.println(\"ok\"); }\n"
+                + "}\n"
+                + "```";
+
+        int[] repairCalls = new int[]{0};
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+        };
+        com.codementor.api.service.AiMentorService spyService = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
+                repairCalls[0]++;
+                return "public class FakeRepaired {}";
+            }
+        };
+
+        com.codementor.api.dto.AiMentorResponse response = new com.codementor.api.dto.AiMentorResponse(
+                responseWithFragments, "tencent/hy4", "SUCCESS", "Java", "DSA", null
+        );
+        spyService.validateAndEnrichResponse(response, "tencent/hy4", "Java");
+
+        org.junit.jupiter.api.Assertions.assertEquals(0, repairCalls[0],
+                "Incomplete fragments must NEVER trigger auto-repair");
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(5, response.getValidationDetails().size());
+
+        for (int i = 0; i < 4; i++) {
+            com.codementor.api.dto.JavaCodeBlockValidation fragmentDetail = response.getValidationDetails().get(i);
+            org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", fragmentDetail.getStatus());
+            org.junit.jupiter.api.Assertions.assertFalse(fragmentDetail.isCorrected());
+            org.junit.jupiter.api.Assertions.assertNull(fragmentDetail.getErrorMessage());
+        }
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", response.getValidationDetails().get(4).getStatus());
+        org.junit.jupiter.api.Assertions.assertTrue(response.getAiResponse().contains("public OrderService(...)"));
+        org.junit.jupiter.api.Assertions.assertTrue(response.getAiResponse().contains("while (sum >= target)"));
+    }
+
+    @Test
+    @DisplayName("Issue 2 & 3: Live OpenRouter 12-section DI and 7-section Two-Pointers outputs are normalized to strictly 5 top-level sections with accurate fragment handling")
+    void regression_LiveOpenRouterOutputsEnforceFiveSectionStructureAndPartialFragments() {
+        // Simulate live 12-section OpenRouter Dependency Injection response with partial constructor fragment
+        String twelveSectionDiOutput = "### 1. Understanding Dependency Injection\n"
+                + "Dependency Injection decouples object creation from business behavior.\n\n"
+                + "### 2. Why Tight Coupling Hurts\n"
+                + "Instantiating dependencies with `new` makes mocking hard.\n\n"
+                + "### 3. Constructor Injection\n"
+                + "Preferred because dependencies can be `final`.\n\n"
+                + "```java\n"
+                + "public OrderService(...)\n"
+                + "```\n\n"
+                + "### 4. Field Injection\n"
+                + "Avoid `@Autowired` on fields in production services.\n\n"
+                + "### 5. Setter Injection\n"
+                + "Only useful for optional dependencies.\n\n"
+                + "### 6. Practical Code Example\n"
+                + "```java\n"
+                + "public class OrderService {\n"
+                + "    private final PaymentClient client;\n"
+                + "    public OrderService(PaymentClient client) { this.client = client; }\n"
+                + "}\n"
+                + "```\n\n"
+                + "### 7. Step-by-Step Walkthrough\n"
+                + "1. Spring resolves `PaymentClient` from the container.\n"
+                + "2. The constructor stores it in a `final` field.\n\n"
+                + "### 8. Common Pitfalls\n"
+                + "Avoid circular dependencies.\n\n"
+                + "### 9. Unit Testing Benefits\n"
+                + "Pass mocks directly via constructor.\n\n"
+                + "### 10. Bean Scopes\n"
+                + "Default Spring scope is singleton.\n\n"
+                + "### 11. Interview Talking Points\n"
+                + "Highlight immutability and testability.\n\n"
+                + "### 12. Summary & Cheat Sheet\n"
+                + "- Always prefer constructor injection.";
+
+        // Simulate live 7-section OpenRouter Two Pointers vs Sliding Window response with control-flow fragments
+        String sevenSectionTwoPointersOutput = "### 1. Problem Overview\n"
+                + "Choose between Two Pointers and Sliding Window based on monotonicity.\n\n"
+                + "### 2. Two Pointers Concept\n"
+                + "Tracks opposite or read/write indices in O(n) time.\n\n"
+                + "```java\n"
+                + "for (int read = 0; read < nums.length; read++)\n"
+                + "```\n\n"
+                + "```java\n"
+                + "if (nums[read] != 0)\n"
+                + "```\n\n"
+                + "### 3. Sliding Window Concept\n"
+                + "Maintains a dynamic contiguous subarray window.\n\n"
+                + "```java\n"
+                + "while (sum >= target)\n"
+                + "```\n\n"
+                + "### 4. Practical Java Code Example\n"
+                + "```java\n"
+                + "public int minSubArrayLen(int target, int[] nums) {\n"
+                + "    int left = 0, sum = 0, ans = Integer.MAX_VALUE;\n"
+                + "    for (int right = 0; right < nums.length; right++) {\n"
+                + "        sum += nums[right];\n"
+                + "        while (sum >= target) {\n"
+                + "            ans = Math.min(ans, right - left + 1);\n"
+                + "            sum -= nums[left++];\n"
+                + "        }\n"
+                + "    }\n"
+                + "    return ans == Integer.MAX_VALUE ? 0 : ans;\n"
+                + "}\n"
+                + "```\n\n"
+                + "### 5. Step-by-Step Code Walkthrough\n"
+                + "1. Expand `right` to grow window sum.\n"
+                + "2. Shrink `left` while `sum >= target`.\n\n"
+                + "### 6. Time & Space Complexity\n"
+                + "O(n) time and O(1) space.\n\n"
+                + "### 7. Quick Reference Cheat Sheet\n"
+                + "- Use Sliding Window for contiguous subarrays.";
+
+        com.codementor.api.config.OpenRouterConfig mockConfig = new com.codementor.api.config.OpenRouterConfig() {
+            @Override
+            public boolean isApiKeyConfigured() {
+                return true;
+            }
+        };
+
+        final String[] cannedReply = new String[1];
+        int[] correctionCalls = new int[]{0};
+        com.codementor.api.service.AiMentorService liveSimulatedService = new com.codementor.api.service.AiMentorService(
+                mockConfig, javaCodeValidationService
+        ) {
+            @Override
+            public String callOpenRouterApi(AiMentorRequest request, String model, String lang, String context) {
+                return cannedReply[0];
+            }
+
+            @Override
+            public String requestSyntaxCorrection(String model, String brokenCode, String errorMessage) {
+                correctionCalls[0]++;
+                return brokenCode;
+            }
+        };
+
+        // Case A: 12-section DI output
+        cannedReply[0] = twelveSectionDiOutput;
+        com.codementor.api.dto.AiMentorResponse diResp = liveSimulatedService.chatWithMentor(
+                new AiMentorRequest("Explain Spring DI", List.of(), "Java", "Spring Boot")
+        );
+        assertStrictlyFiveCanonicalSections(diResp.getAiResponse());
+        org.junit.jupiter.api.Assertions.assertTrue(diResp.getAiResponse().contains("#### Constructor Injection"));
+        org.junit.jupiter.api.Assertions.assertTrue(diResp.getAiResponse().contains("#### Common Pitfalls"));
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", diResp.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", diResp.getValidationDetails().get(0).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", diResp.getValidationDetails().get(1).getStatus());
+
+        // Case B: 7-section Two Pointers vs Sliding Window output
+        cannedReply[0] = sevenSectionTwoPointersOutput;
+        com.codementor.api.dto.AiMentorResponse tpResp = liveSimulatedService.chatWithMentor(
+                new AiMentorRequest("Two Pointers vs Sliding Window", List.of(), "Java", "DSA")
+        );
+        assertStrictlyFiveCanonicalSections(tpResp.getAiResponse());
+        org.junit.jupiter.api.Assertions.assertTrue(tpResp.getAiResponse().contains("#### Two Pointers Concept"));
+        org.junit.jupiter.api.Assertions.assertTrue(tpResp.getAiResponse().contains("#### Sliding Window Concept"));
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", tpResp.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(4, tpResp.getValidationDetails().size());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", tpResp.getValidationDetails().get(0).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", tpResp.getValidationDetails().get(1).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("NOT_CHECKED", tpResp.getValidationDetails().get(2).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", tpResp.getValidationDetails().get(3).getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(0, correctionCalls[0],
+                "Partial fragments in live responses must never trigger syntax repair");
+    }
+
+    private void assertStrictlyFiveCanonicalSections(String markdown) {
+        List<String> numberedHeadings = new ArrayList<>();
+        boolean inCode = false;
+        for (String line : markdown.split("\\r?\\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("```")) {
+                inCode = !inCode;
+                continue;
+            }
+            if (!inCode && trimmed.matches("^#{1,3}\\s*\\d+\\.\\s+.*$")) {
+                numberedHeadings.add(trimmed);
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertEquals(
+                List.of(
+                        "### 1. Understand & Clarify",
+                        "### 2. Explain the Concept",
+                        "### 3. Practical Code Example",
+                        "### 4. Step-by-Step Code Walkthrough",
+                        "### 5. Cheat Sheet"
+                ),
+                numberedHeadings,
+                "Response must contain strictly the 5 canonical numbered top-level sections and zero extra numbered sections"
+        );
+    }
 }

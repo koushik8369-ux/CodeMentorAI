@@ -6,6 +6,7 @@ import com.github.javaparser.ParseResult;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.Problem;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.expr.Expression;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -308,7 +309,22 @@ public class JavaCodeValidationService {
                 return ValidationResult.valid("Java statement/block syntax parsed cleanly under Java 21 grammar (syntax check only; not compiled or executed)");
             }
 
-            // Prefer the most relevant parse error diagnostic
+            // Attempt 6: Standalone non-trivial Java expression (e.g. lambda/stream call, ternary, array/binary expression)
+            if (isCandidateStandaloneExpression(cleaned)) {
+                ParseResult<Expression> exprResult = parser.parseExpression(cleaned);
+                if (exprResult.isSuccessful()
+                        && exprResult.getProblems().isEmpty()
+                        && exprResult.getResult().map(expr -> !expr.isNameExpr() && !expr.isLiteralExpr()).orElse(false)) {
+                    return ValidationResult.valid("Java expression syntax parsed cleanly under Java 21 grammar (syntax check only; not compiled or executed)");
+                }
+            }
+
+            // Check if the snippet is an intentionally incomplete/excerpted or ambiguous Java fragment
+            if (isIncompleteOrAmbiguousFragment(cleaned)) {
+                return ValidationResult.notChecked("Incomplete or ambiguous Java fragment (syntax parsing not applicable)");
+            }
+
+            // Prefer the most relevant parse error diagnostic for genuine malformed constructs
             boolean declaresTopLevelType = Pattern.compile("\\b(class|interface|record|enum)\\s+[A-Za-z_]").matcher(cleaned).find();
             if (!declaresTopLevelType && !classResult.getProblems().isEmpty()) {
                 return ValidationResult.invalid(sanitizeProblemMessage(classResult.getProblems().get(0).getMessage()));
@@ -325,12 +341,133 @@ public class JavaCodeValidationService {
             return ValidationResult.invalid("Syntax parse error detected in Java code snippet (syntax check only)");
 
         } catch (ParseProblemException ex) {
+            if (isIncompleteOrAmbiguousFragment(cleaned)) {
+                return ValidationResult.notChecked("Incomplete or ambiguous Java fragment (syntax parsing not applicable)");
+            }
             String msg = ex.getProblems().isEmpty() ? ex.getMessage() : ex.getProblems().get(0).getMessage();
             return ValidationResult.invalid(sanitizeProblemMessage(msg));
         } catch (Exception ex) {
             logger.debug("JavaParser unexpected failure: {}", ex.getMessage());
             return ValidationResult.invalid("Syntax parsing encountered an unexpected error (syntax check only)");
         }
+    }
+
+    private boolean isCandidateStandaloneExpression(String code) {
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        String body = stripComments(code);
+        if (body.isEmpty() || body.endsWith(";") || body.contains("{") || body.contains("}")) {
+            return false;
+        }
+        // Must have balanced parentheses/brackets and look like an actual Java expression (not a control header or declaration)
+        if (Pattern.compile("^(?:if|for|while|switch|try|catch|else|return|throw|public|private|protected|class|interface|record|enum)\\b").matcher(body).find()) {
+            return false;
+        }
+        return hasBalancedParens(body) && (body.contains(".") || body.contains("->") || body.contains("::")
+                || body.contains("(") || body.contains("[") || body.contains("?")
+                || Pattern.compile("[+\\-*/%&|^!<>=]{1,2}").matcher(body).find());
+    }
+
+    public boolean isIncompleteOrAmbiguousFragment(String code) {
+        if (code == null || code.isBlank()) {
+            return false;
+        }
+        String body = stripCommentsAndStrings(code).trim();
+        if (body.isEmpty()) {
+            return false;
+        }
+
+        // 1. Placeholder ellipsis such as `(...)`, `{ ... }`, `, ...`, or standalone `...`
+        if (Pattern.compile("(?<!\\w)\\.\\.\\.(?=\\s*(?:\\)|\\}|;|,|$))").matcher(body).find()
+                || Pattern.compile("(?m)^\\s*\\.\\.\\.\\s*$").matcher(body).find()) {
+            return true;
+        }
+
+        boolean declaresTopLevelType = Pattern.compile("\\b(class|interface|record|enum)\\s+[A-Za-z_]").matcher(body).find();
+        int openBraces = countChar(body, '{');
+        int closeBraces = countChar(body, '}');
+
+        // 2. Excerpted continuation fragments starting with closing brace or orphan clause
+        if (body.startsWith("}")
+                || Pattern.compile("^(?:else|catch|finally|case\\s+[^:]+:|default\\s*:)\\b").matcher(body).find()) {
+            return true;
+        }
+
+        // 3. Bodyless control-flow header fragments: `for (...)`, `if (...)`, `while (...)`, `switch (...)`, `try (...)`, `catch (...)`
+        boolean startsWithControlHeader = Pattern.compile(
+                "^(?:else\\s+if|if|for|while|switch|try|catch|synchronized)\\s*\\("
+        ).matcher(body).find();
+        if (startsWithControlHeader && openBraces == 0 && closeBraces == 0 && !body.endsWith(";")
+                && hasBalancedParens(body) && body.endsWith(")")) {
+            return true;
+        }
+
+        // 4. Dangling control-flow block opener without closing brace (walkthrough excerpt), e.g., `if (x > 0) {`
+        if (!declaresTopLevelType && startsWithControlHeader && openBraces == 1 && closeBraces == 0
+                && hasBalancedParens(body) && body.endsWith("{")) {
+            return true;
+        }
+
+        // 5. Bodyless constructor or method signature fragment: `public OrderService(...)`, `public OrderService(Repo r)`, `OrderService(Repo r)`, `int solve(int[] nums)`
+        if (!declaresTopLevelType && openBraces == 0 && closeBraces == 0 && !body.endsWith(";")
+                && hasBalancedParens(body)) {
+            boolean matchesSignatureWithModifiers = Pattern.compile(
+                    "^(?:@[A-Za-z_][\\w.]*(?:\\([^)]*\\))?\\s*)*"
+                            + "(?:(?:public|private|protected|static|final|abstract|default|synchronized|native)\\s+)+"
+                            + "(?:<[^>]+>\\s+)?"
+                            + "(?:[A-Za-z_][\\w.<>\\[\\],\\s?]*\\s+)?"
+                            + "[A-Za-z_][A-Za-z0-9_]*\\s*\\([\\s\\S]*\\)(?:\\s*throws\\s+[\\w.,\\s<>]+)?$"
+            ).matcher(body).find();
+            boolean matchesPackagePrivateSignature = Pattern.compile(
+                    "^(?:@[A-Za-z_][\\w.]*(?:\\([^)]*\\))?\\s*)*"
+                            + "(?:(?:<[^>]+>\\s+)?[A-Za-z_][\\w.<>\\[\\],?]*\\s+[a-z_][A-Za-z0-9_]*|[A-Z][A-Za-z0-9_]*)"
+                            + "\\s*\\([\\s\\S]*\\)(?:\\s*throws\\s+[\\w.,\\s<>]+)?$"
+            ).matcher(body).find();
+            if (matchesSignatureWithModifiers || matchesPackagePrivateSignature) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private String stripCommentsAndStrings(String code) {
+        if (code == null) {
+            return "";
+        }
+        String noLineComments = code.replaceAll("//.*", "");
+        String noBlockComments = noLineComments.replaceAll("/\\*[\\s\\S]*?\\*/", "");
+        String noStrings = noBlockComments.replaceAll("\"(?:\\\\.|[^\"\\\\])*\"", "\"\"");
+        return noStrings.replaceAll("'(?:\\\\.|[^'\\\\])*'", "''");
+    }
+
+    private boolean hasBalancedParens(String text) {
+        int depth = 0;
+        int parenCount = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '(') {
+                depth++;
+                parenCount++;
+            } else if (c == ')') {
+                depth--;
+                if (depth < 0) {
+                    return false;
+                }
+            }
+        }
+        return depth == 0 && parenCount >= 1;
+    }
+
+    private int countChar(String text, char target) {
+        int count = 0;
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) == target) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private String detectConstructorName(String code) {

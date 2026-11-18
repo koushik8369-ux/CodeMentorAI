@@ -390,7 +390,7 @@ Choose a quick starter topic above or type any coding question or snippet below!
             {validation && validation.isCorrected && (
               <div className="px-3 py-1 bg-emerald-950/20 border-b border-emerald-500/20 text-emerald-300 text-[11px] flex items-center gap-1.5 font-sans">
                 <Check className="w-3 h-3 text-emerald-400 shrink-0" />
-                <span>Automatically repaired and parsed against Java 21 syntax grammar (syntax check only; not compiled or executed).</span>
+                <span>Syntax in this snippet was automatically repaired from the original output and parsed against Java 21 grammar (syntax check only; not compiled or executed).</span>
               </div>
             )}
             {validation && validation.status === 'INVALID' && validation.errorMessage && (
@@ -410,6 +410,13 @@ Choose a quick starter topic above or type any coding question or snippet below!
 
       // Format markdown headings & bold text
       const formatted = part.split('\n').map((line, lIdx) => {
+        if (line.startsWith('#### ')) {
+          return (
+            <h5 key={lIdx} className="font-semibold text-slate-100 text-xs sm:text-sm mt-2.5 mb-1">
+              {line.replace('#### ', '')}
+            </h5>
+          );
+        }
         if (line.startsWith('### ')) {
           return (
             <h4 key={lIdx} className="font-bold text-white text-sm sm:text-base mt-3 mb-1 text-indigo-300">
